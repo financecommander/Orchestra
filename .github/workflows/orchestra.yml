@@ -1,0 +1,202 @@
+name: Orchestra Workflow
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to process'
+        required: true
+        type: number
+      workflow_type:
+        description: 'Type of workflow to execute'
+        required: true
+        type: choice
+        options:
+          - analyze
+          - implement
+          - review
+          - deploy
+      provider:
+        description: 'AI Provider to use'
+        required: false
+        type: choice
+        default: 'anthropic'
+        options:
+          - anthropic
+          - openai
+          - xai
+
+jobs:
+  check-trigger:
+    name: Check if workflow should run
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      issue_number: ${{ steps.check.outputs.issue_number }}
+    steps:
+      - name: Check trigger conditions
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "issue_number=${{ inputs.issue_number }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "issues" ]]; then
+            # Check if the issue has the orchestra-trigger label
+            labels='${{ toJson(github.event.issue.labels.*.name) }}'
+            if echo "$labels" | grep -q "orchestra-trigger"; then
+              echo "should_run=true" >> $GITHUB_OUTPUT
+              echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+            else
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+  execute-orchestra:
+    name: Execute Orchestra Workflow
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: 'pip'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          
+      - name: Get issue details
+        id: issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.check-trigger.outputs.issue_number }}
+            });
+            
+            core.setOutput('title', issue.data.title);
+            core.setOutput('body', issue.data.body);
+            core.setOutput('labels', JSON.stringify(issue.data.labels.map(l => l.name)));
+            
+      - name: Determine AI provider
+        id: provider
+        run: |
+          PROVIDER="${{ inputs.provider || 'anthropic' }}"
+          echo "provider=$PROVIDER" >> $GITHUB_OUTPUT
+          
+          case $PROVIDER in
+            anthropic)
+              echo "api_key=${{ secrets.ANTHROPIC_API_KEY }}" >> $GITHUB_OUTPUT
+              echo "model=claude-3-opus-20240229" >> $GITHUB_OUTPUT
+              ;;
+            openai)
+              echo "api_key=${{ secrets.OPENAI_API_KEY }}" >> $GITHUB_OUTPUT
+              echo "model=gpt-4-turbo-preview" >> $GITHUB_OUTPUT
+              ;;
+            xai)
+              echo "api_key=${{ secrets.XAI_API_KEY }}" >> $GITHUB_OUTPUT
+              echo "model=grok-1" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          
+      - name: Execute Orchestra DSL
+        id: execute
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
+          ISSUE_BODY: ${{ steps.issue.outputs.body }}
+          WORKFLOW_TYPE: ${{ inputs.workflow_type || 'analyze' }}
+          PROVIDER: ${{ steps.provider.outputs.provider }}
+        run: |
+          echo "Executing Orchestra workflow for issue #$ISSUE_NUMBER"
+          echo "Title: $ISSUE_TITLE"
+          echo "Workflow Type: $WORKFLOW_TYPE"
+          echo "Provider: $PROVIDER"
+          
+          # Create output directory
+          mkdir -p orchestra-output
+          
+          # Check if orchestra module exists and run it
+          if [ -f orchestra/__main__.py ]; then
+            python -m orchestra \
+              --issue "$ISSUE_NUMBER" \
+              --workflow "$WORKFLOW_TYPE" \
+              --provider "$PROVIDER" \
+              --output orchestra-output/result.json
+          else
+            echo "Orchestra module not yet implemented. Creating placeholder output."
+            cat > orchestra-output/result.json << EOF
+          {
+            "status": "pending",
+            "issue": "$ISSUE_NUMBER",
+            "workflow": "$WORKFLOW_TYPE",
+            "provider": "$PROVIDER",
+            "message": "Orchestra DSL execution system is being set up",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          fi
+          
+      - name: Upload execution results
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-execution-results
+          path: orchestra-output/
+          
+      - name: Comment on issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let message = '## Orchestra Workflow Execution\n\n';
+            
+            try {
+              const result = JSON.parse(fs.readFileSync('orchestra-output/result.json', 'utf8'));
+              message += `**Status:** ${result.status}\n`;
+              message += `**Workflow Type:** ${result.workflow}\n`;
+              message += `**Provider:** ${result.provider}\n`;
+              message += `**Timestamp:** ${result.timestamp}\n\n`;
+              message += result.message || 'Execution completed';
+            } catch (error) {
+              message += '⚠️ Execution completed but results could not be parsed.\n';
+              message += `Error: ${error.message}`;
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ needs.check-trigger.outputs.issue_number }},
+              body: message
+            });
+
+  notify-completion:
+    name: Notify Completion
+    needs: [check-trigger, execute-orchestra]
+    if: always() && needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check execution status
+        run: |
+          if [[ "${{ needs.execute-orchestra.result }}" == "success" ]]; then
+            echo "✅ Orchestra workflow completed successfully"
+          else
+            echo "❌ Orchestra workflow failed or was cancelled"
+          fi
