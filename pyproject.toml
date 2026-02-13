@@ -38,7 +38,7 @@ Homepage = "https://github.com/financecommander/Orchestra"
 Repository = "https://github.com/financecommander/Orchestra"
 
 [tool.pytest.ini_options]
-testpaths = ["orchestra/tests"]
+testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
