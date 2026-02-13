@@ -50,7 +50,28 @@ Testing OpenAI...
 🎉 All configured agents working!
 ```
 
-### Troubleshooting
+## plaid_integration_workflow.py
+
+A multi-agent workflow demonstrating fintech feature development with Orchestra DSL. Uses Claude for architecture design and OpenAI for code generation to build a Plaid bank verification integration with BSA/AML compliance.
+
+### Usage
+
+```bash
+python examples/plaid_integration_workflow.py
+```
+
+This example requires both `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` to be set.
+
+### What It Demonstrates
+
+- Multi-agent orchestration (Claude + OpenAI)
+- Task dependencies (implementation depends on design)
+- Workflow execution with sequential stages
+- Fintech compliance considerations (BSA/AML)
+
+---
+
+## Troubleshooting
 
 **Issue**: `ModuleNotFoundError: No module named 'orchestra'`
 - **Solution**: Make sure you've installed the requirements and are running from the project root, or install Orchestra DSL in development mode:
