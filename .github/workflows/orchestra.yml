@@ -229,7 +229,9 @@ jobs:
           SNAPSHOT_EOF
             # Render dynamic values into the snapshot
             python3 << 'PYEOF'
-          import json, datetime, os
+          import json
+          import datetime
+          import os
           data = {
             'workflow_id': os.environ.get('WORKFLOW_ID', ''),
             'workflow_name': os.environ.get('WORKFLOW_NAME', ''),
@@ -238,7 +240,7 @@ jobs:
             'compliance_tags': os.environ.get('COMPLIANCE_TAGS', ''),
             'status': 'placeholder',
             'message': 'Orchestra DSL execution engine is being set up',
-            'timestamp': datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
           }
           with open('orchestra-output/state/snapshot.json', 'w') as f:
             json.dump(data, f, indent=2)
@@ -323,9 +325,9 @@ jobs:
             }
 
             // List generated artifacts
+            const artifactsDir = 'orchestra-output/artifacts';
             let artifactsList = '';
             try {
-              const artifactsDir = 'orchestra-output/artifacts';
               const files = fs.readdirSync(artifactsDir);
               artifactsList = files.map(f => `- \`${f}\``).join('\n');
             } catch (e) {
@@ -358,7 +360,6 @@ jobs:
             });
 
             // Commit generated artifacts to the new branch
-            const artifactsDir = 'orchestra-output/artifacts';
             let files = [];
             try {
               files = fs.readdirSync(artifactsDir);
@@ -367,6 +368,11 @@ jobs:
             }
 
             for (const file of files) {
+              // Skip files with path traversal sequences
+              if (file.includes('..') || file.startsWith('/')) {
+                console.log(`Skipping unsafe filename: ${file}`);
+                continue;
+              }
               const content = fs.readFileSync(`${artifactsDir}/${file}`);
               const base64Content = content.toString('base64');
               await github.rest.repos.createOrUpdateFileContents({
