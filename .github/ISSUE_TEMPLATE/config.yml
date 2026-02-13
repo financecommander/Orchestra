@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/financecommander/Orchestra/blob/main/README.md
+    about: "Read the Orchestra documentation"
+  - name: Quick Start Guide
+    url: https://github.com/financecommander/Orchestra/blob/main/README.md#quick-start
+    about: "Get started with Orchestra quickly"
+  - name: Community Chat
+    url: https://github.com/financecommander/Orchestra/discussions
+    about: "Join the Orchestra community discussions"

@@ -1,0 +1,71 @@
+name: "Quality Gate Escalation"
+description: "Escalate a quality gate failure for review"
+title: "[Escalation] "
+labels: ["escalation", "needs-review"]
+body:
+  - type: input
+    id: workflow-id
+    attributes:
+      label: Workflow ID
+      description: "The ID of the workflow that triggered the escalation."
+      placeholder: "e.g., wf-abc123"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: gate-that-failed
+    attributes:
+      label: Gate that Failed
+      description: "Select the quality gate that failed."
+      options:
+        - Security
+        - Compliance
+        - Performance
+    validations:
+      required: true
+
+  - type: textarea
+    id: trigger-reason
+    attributes:
+      label: Trigger Reason
+      description: "Describe the reason this escalation was triggered."
+      placeholder: "Explain what caused the gate failure..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: audit-report
+    attributes:
+      label: Audit Report
+      description: "Paste the audit report as JSON."
+      placeholder: |
+        {
+          "audit_id": "...",
+          "findings": [],
+          "timestamp": "..."
+        }
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: recommended-actions
+    attributes:
+      label: Recommended Actions
+      description: "Suggest actions to resolve this escalation."
+      placeholder: "List recommended actions..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: "Select the severity level of this escalation."
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true

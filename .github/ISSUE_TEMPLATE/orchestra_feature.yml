@@ -1,0 +1,80 @@
+name: "Feature Request (Orchestra Workflow)"
+description: "Request a new feature or enhancement for Orchestra workflows"
+title: "[Orchestra] "
+labels: ["orchestra-workflow", "feature-request"]
+body:
+  - type: textarea
+    id: feature-description
+    attributes:
+      label: Feature Description
+      description: "Describe the feature you'd like to see implemented."
+      placeholder: "A clear and concise description of the feature..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical-constraints
+    attributes:
+      label: Technical Constraints
+      description: "Framework, database, cloud provider, or other technical constraints."
+      placeholder: "e.g., Must support PostgreSQL, runs on AWS Lambda..."
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: "Select the priority level for this feature."
+      options:
+        - P0
+        - P1
+        - P2
+        - P3
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: compliance-requirements
+    attributes:
+      label: Compliance Requirements
+      description: "Select any applicable compliance requirements."
+      options:
+        - label: BSA/AML
+        - label: KYC
+        - label: FINRA
+        - label: GDPR
+        - label: SOC2
+
+  - type: dropdown
+    id: target-workflow
+    attributes:
+      label: Target Workflow
+      description: "Select the target workflow for this feature."
+      options:
+        - constitutional_tender_kyc
+        - quantum_protocol_deployment
+        - Other
+    validations:
+      required: false
+
+  - type: dropdown
+    id: estimated-complexity
+    attributes:
+      label: Estimated Complexity
+      description: "Select the estimated complexity for this feature."
+      options:
+        - "Small (1-2 days)"
+        - "Medium (3-5 days)"
+        - "Large (1-2 weeks)"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: "Any additional context, screenshots, or references."
+      placeholder: "Add any other context about the feature request here..."
+    validations:
+      required: false
