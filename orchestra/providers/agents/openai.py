@@ -12,7 +12,13 @@ class OpenAIProvider(BaseProvider):
 
     def __init__(self, api_key: str | None = None):
         super().__init__(api_key=api_key)
-        self.client = openai_sdk.OpenAI(api_key=self.api_key)
+        self._client = None
+
+    @property
+    def client(self):
+        if self._client is None:
+            self._client = openai_sdk.OpenAI(api_key=self.api_key)
+        return self._client
 
     def execute(self, prompt: str, model: str | None = None) -> str:
         model = model or self.DEFAULT_MODEL
