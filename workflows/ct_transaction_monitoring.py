@@ -10,6 +10,7 @@ from orchestra.core.workflow import Workflow
 from orchestra.core.task import Task
 from orchestra.providers.agents.anthropic import AnthropicProvider
 from orchestra.providers.agents.openai import OpenAIProvider
+from orchestra.core.gates import SecurityGate, ComplianceGate
 
 # Initialize providers
 claude = AnthropicProvider(api_key=os.getenv('ANTHROPIC_API_KEY'))
@@ -88,8 +89,12 @@ Generate:
 """
 )
 
-# Add tasks to workflow
+# Add tasks and gates to workflow
 workflow.add_tasks([architecture_task, models_task, build_task])
+workflow.add_gates([
+    SecurityGate(threshold=95),
+    ComplianceGate(threshold=98)
+])
 
 # Execute
 if __name__ == "__main__":
