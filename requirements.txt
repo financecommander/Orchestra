@@ -1,4 +1,16 @@
+# Orchestra DSL Requirements
+
+# Core dependencies
 anthropic>=0.18.0
 openai>=1.12.0
 pyyaml>=6.0
 pydantic>=2.0
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Code quality
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
