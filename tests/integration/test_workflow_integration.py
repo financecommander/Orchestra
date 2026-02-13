@@ -1,6 +1,5 @@
 """Integration tests for Orchestra DSL."""
 
-import pytest
 from orchestra.core.agent import Agent
 from orchestra.core.task import Task
 from orchestra.core.workflow import Workflow
@@ -15,18 +14,14 @@ class TestWorkflowIntegration:
     def test_simple_workflow_execution(self):
         """Test executing a simple workflow end-to-end."""
         # Create workflow
-        workflow = Workflow(
-            name="simple_workflow", description="A simple test workflow"
-        )
+        workflow = Workflow(name="simple_workflow", description="A simple test workflow")
 
         # Add an agent
         agent = Agent(name="test_agent", provider="test")
         workflow.add_agent(agent)
 
         # Add tasks
-        task1 = Task(
-            name="task1", description="First task", agent="test_agent"
-        )
+        task1 = Task(name="task1", description="First task", agent="test_agent")
         task2 = Task(
             name="task2",
             description="Second task",
@@ -52,15 +47,11 @@ class TestWorkflowIntegration:
     def test_workflow_with_context(self):
         """Test workflow execution with shared context."""
         # Create workflow
-        workflow = Workflow(
-            name="context_workflow", description="Workflow with context"
-        )
+        workflow = Workflow(name="context_workflow", description="Workflow with context")
 
         # Add tasks
         task1 = Task(name="task1", description="First task")
-        task2 = Task(
-            name="task2", description="Second task", dependencies=["task1"]
-        )
+        task2 = Task(name="task2", description="Second task", dependencies=["task1"])
         workflow.add_task(task1)
         workflow.add_task(task2)
 
@@ -80,9 +71,7 @@ class TestWorkflowIntegration:
     def test_parallel_task_execution(self):
         """Test workflow with parallel tasks."""
         # Create workflow
-        workflow = Workflow(
-            name="parallel_workflow", description="Workflow with parallel tasks"
-        )
+        workflow = Workflow(name="parallel_workflow", description="Workflow with parallel tasks")
 
         # Add parallel tasks (no dependencies)
         task1 = Task(name="task1", description="Parallel task 1")
