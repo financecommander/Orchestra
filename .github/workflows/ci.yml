@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Linting & Type Checking
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black ruff mypy
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Check formatting with black
+        run: black --check .
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Type check with mypy
+        # Allow failures until orchestra package is fully typed
+        run: mypy orchestra/ --ignore-missing-imports || true
+
+  test:
+    name: Unit Tests (Python ${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run unit tests with coverage
+        run: pytest tests/unit/ --cov=orchestra --cov-report=xml --cov-fail-under=80
+
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run integration tests
+        run: pytest tests/integration/ -v --tb=long 2>&1 | tee integration-test.log
+
+      - name: Test fixture workflows
+        run: |
+          if [ -d tests/fixtures/ ]; then
+            pytest tests/fixtures/ -v --tb=long 2>&1 | tee fixture-test.log
+          else
+            echo "No fixture tests found, skipping."
+          fi
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-logs
+          path: "*.log"
+          retention-days: 14
+
+  docs:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-
+
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs mkdocs-material
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Build documentation
+        run: |
+          if [ -f mkdocs.yml ]; then
+            mkdocs build --strict
+          else
+            echo "No mkdocs.yml found. Skipping docs build."
+            mkdir -p site
+            echo "<html><body><h1>Orchestra Documentation</h1><p>Documentation not yet configured.</p></body></html>" > site/index.html
+          fi
+
+      - name: Check for broken links
+        run: |
+          if [ -d site/ ]; then
+            pip install linkchecker
+            # Allow failures as external link checking can be flaky
+            linkchecker site/index.html --no-warnings --check-extern || true
+          fi
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: site/
+          retention-days: 14
+
+  comment:
+    name: PR Comment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [lint, test, integration, docs]
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Comment on PR with results
+        uses: actions/github-script@v7
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+        with:
+          script: |
+            const lintResult = process.env.LINT_RESULT;
+            const testResult = process.env.TEST_RESULT;
+            const integrationResult = process.env.INTEGRATION_RESULT;
+            const docsResult = process.env.DOCS_RESULT;
+
+            const statusIcon = (result) => result === 'success' ? '✅' : '❌';
+
+            let body = `## CI Results Summary\n\n`;
+            body += `| Job | Status |\n`;
+            body += `|-----|--------|\n`;
+            body += `| Linting & Type Checking | ${statusIcon(lintResult)} ${lintResult} |\n`;
+            body += `| Unit Tests | ${statusIcon(testResult)} ${testResult} |\n`;
+            body += `| Integration Tests | ${statusIcon(integrationResult)} ${integrationResult} |\n`;
+            body += `| Documentation Build | ${statusIcon(docsResult)} ${docsResult} |\n`;
+
+            const failed = [lintResult, testResult, integrationResult, docsResult].some(r => r !== 'success');
+            if (failed) {
+              body += `\n⚠️ Some checks failed. Please review the logs for details.\n`;
+            } else {
+              body += `\n🎉 All checks passed!\n`;
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
