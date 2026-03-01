@@ -60,7 +60,7 @@ def main():
         name="security_auditor",
         provider="xai",
         system_prompt="You are a security expert. Audit code for vulnerabilities and security issues.",
-        config={"model": "grok-beta", "temperature": 0.2},
+        config={"model": "grok-3-mini", "temperature": 0.2},
     )
     workflow.add_agent(security_auditor)
 
@@ -68,7 +68,7 @@ def main():
         name="compliance_auditor",
         provider="xai",
         system_prompt="You are a financial compliance expert. Audit code for regulatory compliance.",
-        config={"model": "grok-beta", "temperature": 0.2},
+        config={"model": "grok-3-mini", "temperature": 0.2},
     )
     workflow.add_agent(compliance_auditor)
 

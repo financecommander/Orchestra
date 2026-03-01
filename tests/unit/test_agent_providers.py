@@ -211,7 +211,7 @@ class TestXAIProvider:
     def test_xai_provider_creation(self):
         """Test basic provider creation."""
         provider = XAIProvider()
-        assert provider.model == "grok-beta"
+        assert provider.model == "grok-3-mini"
         assert provider.temperature == 0.7
         assert provider.max_tokens == 2048
 
@@ -249,4 +249,4 @@ class TestXAIProvider:
         """Test string representation."""
         provider = XAIProvider()
         assert "XAIProvider" in repr(provider)
-        assert "grok-beta" in repr(provider)
+        assert "grok-3-mini" in repr(provider)
