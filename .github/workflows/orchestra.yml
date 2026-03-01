@@ -1,0 +1,175 @@
+name: Orchestra – AI Portal Automation
+
+on:
+  # Run Constitutional Tender workflows on demand
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: "Constitutional Tender workflow to run"
+        required: true
+        type: choice
+        options:
+          - contract_review
+          - bid_evaluation
+          - anti_corruption_due_diligence
+          - public_spending_audit
+          - regulatory_impact_assessment
+      environment:
+        description: "Target environment"
+        required: false
+        default: "production"
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+  # Nightly run of all Constitutional Tender workflows
+  schedule:
+    - cron: "0 2 * * *"
+
+  # Triggered when a new issue is labelled 'ai-portal'
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Validate environment and inputs before any AI work
+  # ────────────────────────────────────────────────────────────────────────────
+  preflight:
+    name: Preflight Checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'issues' && github.event.label.name == 'ai-portal')
+
+    outputs:
+      xai_key_set: ${{ steps.check_keys.outputs.xai_key_set }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check API key availability
+        id: check_keys
+        env:
+          XAI_KEY_SET: ${{ secrets.XAI_API_KEY != '' }}
+        run: |
+          echo "xai_key_set=$XAI_KEY_SET" >> "$GITHUB_OUTPUT"
+          echo "XAI API key configured: $XAI_KEY_SET"
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Run Constitutional Tender workflows
+  # ────────────────────────────────────────────────────────────────────────────
+  run_workflows:
+    name: Run Constitutional Tender Workflows
+    runs-on: ubuntu-latest
+    needs: preflight
+    permissions:
+      contents: read
+
+    env:
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Orchestra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run workflow (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          WORKFLOW="${{ github.event.inputs.workflow_name }}"
+          echo "Running workflow: $WORKFLOW"
+          case "$WORKFLOW" in
+            contract_review)
+              python examples/constitutional_tender/01_contract_review.py ;;
+            bid_evaluation)
+              python examples/constitutional_tender/02_bid_evaluation.py ;;
+            anti_corruption_due_diligence)
+              python examples/constitutional_tender/03_anti_corruption_due_diligence.py ;;
+            public_spending_audit)
+              python examples/constitutional_tender/04_public_spending_audit.py ;;
+            regulatory_impact_assessment)
+              python examples/constitutional_tender/05_regulatory_impact_assessment.py ;;
+          esac
+
+      - name: Run all workflows (scheduled / nightly)
+        if: github.event_name == 'schedule'
+        run: |
+          echo "Running all Constitutional Tender workflows..."
+          python examples/constitutional_tender/01_contract_review.py
+          python examples/constitutional_tender/02_bid_evaluation.py
+          python examples/constitutional_tender/03_anti_corruption_due_diligence.py
+          python examples/constitutional_tender/04_public_spending_audit.py
+          python examples/constitutional_tender/05_regulatory_impact_assessment.py
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Issue-triggered workflow: comment with results
+  # ────────────────────────────────────────────────────────────────────────────
+  issue_workflow:
+    name: Issue-Triggered Workflow
+    runs-on: ubuntu-latest
+    needs: preflight
+    permissions:
+      contents: read
+      issues: write
+    if: >
+      github.event_name == 'issues' &&
+      github.event.label.name == 'ai-portal'
+
+    env:
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Orchestra
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Run contract review workflow
+        id: run_workflow
+        run: |
+          python examples/constitutional_tender/01_contract_review.py 2>&1 | tee /tmp/workflow_output.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Post result comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const MAX_CHARS = 60000;
+            let output = fs.readFileSync('/tmp/workflow_output.txt', 'utf8');
+            if (output.length > MAX_CHARS) {
+              output = output.slice(0, MAX_CHARS) + '\n...(output truncated)';
+            }
+            const issueNumber = context.issue.number;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `## 🎼 Orchestra AI Portal – Workflow Result\n\n\`\`\`\n${output}\n\`\`\``
+            });

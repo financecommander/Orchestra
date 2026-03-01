@@ -27,7 +27,7 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        # Core dependencies - keeping minimal for now
+        "openai>=1.0.0",
     ],
     extras_require={
         "dev": [

@@ -2,18 +2,22 @@
 
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from orchestra.providers.base import BaseProvider
 from orchestra.core.agent import Agent
 from orchestra.core.task import Task
 from orchestra.core.context import Context
+
+XAI_BASE_URL = "https://api.x.ai/v1"
 
 
 class XAIProvider(BaseProvider):
     """XAI Grok API provider with retry logic.
 
     This provider integrates with XAI's Grok API for agent task execution.
-    Includes exponential backoff retry logic for API failures.
+    The XAI API is OpenAI-compatible and uses the ``openai`` SDK with a
+    custom ``base_url``.  Includes exponential backoff retry logic for API
+    failures.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -22,7 +26,8 @@ class XAIProvider(BaseProvider):
         Args:
             config: Configuration including:
                 - api_key: API key for XAI (defaults to XAI_API_KEY env var)
-                - model: Model name to use (default: grok-beta)
+                - model: Model name to use (default: grok-3-mini)
+                - base_url: XAI API base URL (default: https://api.x.ai/v1)
                 - temperature: Sampling temperature (default: 0.7)
                 - max_tokens: Maximum tokens to generate (default: 2048)
                 - max_retries: Maximum number of retries (default: 3)
@@ -30,14 +35,15 @@ class XAIProvider(BaseProvider):
         """
         super().__init__(config)
         self.api_key = self.config.get("api_key") or os.getenv("XAI_API_KEY")
-        self.model = self.config.get("model", "grok-beta")
+        self.model = self.config.get("model", "grok-3-mini")
+        self.base_url = self.config.get("base_url", XAI_BASE_URL)
         self.temperature = self.config.get("temperature", 0.7)
         self.max_tokens = self.config.get("max_tokens", 2048)
         self.max_retries = self.config.get("max_retries", 3)
         self.retry_delay = self.config.get("retry_delay", 1)
 
     def execute(self, agent: Agent, task: Task, context: Context) -> Any:
-        """Execute a task using XAI API with retry logic.
+        """Execute a task using XAI Grok API with retry logic.
 
         Args:
             agent: Agent executing the task
@@ -65,7 +71,7 @@ class XAIProvider(BaseProvider):
             "provider": "xai",
         }
 
-    def _build_messages(self, agent: Agent, task: Task, context: Context) -> list[Dict[str, str]]:
+    def _build_messages(self, agent: Agent, task: Task, context: Context) -> List[Dict[str, str]]:
         """Build messages for Grok API.
 
         Args:
@@ -96,7 +102,7 @@ class XAIProvider(BaseProvider):
 
         return messages
 
-    def _call_grok_with_retry(self, messages: list[Dict[str, str]]) -> str:
+    def _call_grok_with_retry(self, messages: List[Dict[str, str]]) -> str:
         """Call Grok API with exponential backoff retry.
 
         Args:
@@ -124,8 +130,13 @@ class XAIProvider(BaseProvider):
             f"Failed to call Grok API after {self.max_retries} retries: {last_exception}"
         )
 
-    def _call_grok(self, messages: list[Dict[str, str]]) -> str:
-        """Call Grok API.
+    def _call_grok(self, messages: List[Dict[str, str]]) -> str:
+        """Call Grok API using the OpenAI-compatible XAI endpoint.
+
+        When ``XAI_API_KEY`` is set the provider makes a real network call to
+        ``https://api.x.ai/v1`` using the ``openai`` SDK.  When no key is
+        available a simulated response is returned so that the rest of the
+        Orchestra pipeline can be exercised without credentials.
 
         Args:
             messages: Messages to send
@@ -133,26 +144,25 @@ class XAIProvider(BaseProvider):
         Returns:
             Grok response text
         """
-        # This is a placeholder implementation
-        # In production, this would use XAI's API (OpenAI-compatible):
-        #
-        # import openai
-        # client = openai.OpenAI(
-        #     api_key=self.api_key,
-        #     base_url="https://api.x.ai/v1"
-        # )
-        # response = client.chat.completions.create(
-        #     model=self.model,
-        #     messages=messages,
-        #     temperature=self.temperature,
-        #     max_tokens=self.max_tokens
-        # )
-        # return response.choices[0].message.content
-
         if not self.api_key:
             return "[Simulated Grok response - no API key provided]"
 
-        return f"[Grok {self.model} response to: {messages[-1]['content'][:100]}...]"
+        try:
+            import openai  # lazy import – keeps openai an optional dependency
+
+            client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+            )
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=messages,  # type: ignore[arg-type]
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+            return response.choices[0].message.content or ""
+        except ImportError:
+            return f"[Grok {self.model} response - openai package required]"
 
     def validate_config(self) -> bool:
         """Validate XAI provider configuration.

@@ -11,7 +11,10 @@ Orchestra is a Python Domain-Specific Language (DSL) designed for orchestrating 
 - **Declarative Workflow Definition**: Define complex multi-agent workflows using Python
 - **Task Dependencies**: Manage task execution order with dependency tracking
 - **Agent Abstraction**: Support for various AI providers (LLMs, custom implementations)
-- **Multi-Agent Providers**: Built-in support for Anthropic Claude, OpenAI, and XAI Grok
+- **Multi-Agent Providers**: Built-in support for Anthropic Claude, OpenAI, and XAI Grok (live API)
+- **Real Grok Integration**: XAIProvider makes live calls to `https://api.x.ai/v1` using the OpenAI-compatible SDK
+- **Constitutional Tender Workflows**: Five ready-to-run public-procurement governance pipelines
+- **GitHub Actions AI Portal**: Automated workflow execution via `workflow_dispatch`, schedule, and issue labels
 - **Quality Gates**: Security, compliance, and performance validation with escalation
 - **Schema Validation**: Input/output schema validation for agent tasks
 - **Context Management**: Share state and data across tasks and agents
@@ -30,6 +33,23 @@ For development:
 ```bash
 pip install -e ".[dev]"
 ```
+
+## Environment Setup
+
+Copy `.env.example` to `.env` and fill in your API keys:
+
+```bash
+cp .env.example .env
+# edit .env and add your keys
+```
+
+| Variable | Required for | Where to obtain |
+|----------|-------------|-----------------|
+| `XAI_API_KEY` | XAIProvider (Grok) | <https://console.x.ai> |
+| `ANTHROPIC_API_KEY` | AnthropicProvider | <https://console.anthropic.com> |
+| `OPENAI_API_KEY` | OpenAIProvider | <https://platform.openai.com> |
+
+> **Never commit your `.env` file.** It is already listed in `.gitignore`.
 
 ## Quick Start
 
@@ -160,10 +180,10 @@ grok_agent = Agent(
     name="auditor",
     provider="xai",
     system_prompt="You are a security auditor",
-    config={"model": "grok-beta"}
+    config={"model": "grok-3-mini"}  # default model
 )
 
-# Set up environment variables for API keys
+# API keys are read from environment variables (see .env.example)
 # export ANTHROPIC_API_KEY="your-key"
 # export OPENAI_API_KEY="your-key"
 # export XAI_API_KEY="your-key"
@@ -176,6 +196,45 @@ provider_registry = {
 }
 
 executor = Executor(provider_registry=provider_registry)
+```
+
+### Grok / XAI Provider
+
+`XAIProvider` calls the [XAI API](https://api.x.ai/v1) which is fully
+OpenAI-compatible.  Set `XAI_API_KEY` in your environment (or `.env`) and
+Orchestra will make live API calls automatically.
+
+```python
+from orchestra.providers.agents import XAIProvider
+
+# With a real API key the provider calls https://api.x.ai/v1
+provider = XAIProvider(config={"model": "grok-3-mini"})
+
+# Without a key a safe simulated response is returned (useful for testing)
+provider_no_key = XAIProvider()
+```
+
+### Constitutional Tender Workflows
+
+Five production-ready public-procurement governance pipelines are included in
+`examples/constitutional_tender/`:
+
+| # | Workflow | Description |
+|---|----------|-------------|
+| 1 | `01_contract_review.py` | Constitutional & legal compliance review of tender documents |
+| 2 | `02_bid_evaluation.py` | Objective multi-criteria scoring of competing bids |
+| 3 | `03_anti_corruption_due_diligence.py` | Beneficial ownership, sanctions & conflict-of-interest checks |
+| 4 | `04_public_spending_audit.py` | Budget variance analysis and fraud detection |
+| 5 | `05_regulatory_impact_assessment.py` | Impact assessment of new regulations on existing contracts |
+
+Run any workflow directly:
+
+```bash
+python examples/constitutional_tender/01_contract_review.py
+python examples/constitutional_tender/02_bid_evaluation.py
+python examples/constitutional_tender/03_anti_corruption_due_diligence.py
+python examples/constitutional_tender/04_public_spending_audit.py
+python examples/constitutional_tender/05_regulatory_impact_assessment.py
 ```
 
 ### Quality Gates
@@ -284,6 +343,40 @@ See `examples/fintech_workflow.py` for a complete multi-stage pipeline with:
 python examples/fintech_workflow.py
 ```
 
+## GitHub Actions – AI Portal
+
+Orchestra ships with two GitHub Actions workflows in `.github/workflows/`:
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push / PR | Runs tests and linting on every commit |
+| `orchestra.yml` | `workflow_dispatch`, schedule, issue label | Runs Constitutional Tender workflows in CI |
+
+### Running a workflow manually
+
+1. Go to **Actions → Orchestra – AI Portal Automation → Run workflow**
+2. Select the workflow name and target environment
+3. Click **Run workflow**
+
+### Nightly runs
+
+All five Constitutional Tender workflows run automatically every night at 02:00 UTC.
+
+### Issue-triggered runs
+
+Add the `ai-portal` label to any GitHub issue to automatically trigger the
+Contract Review workflow and post results as a comment.
+
+### Required secrets
+
+Add these secrets in **Settings → Secrets and variables → Actions**:
+
+| Secret | Description |
+|--------|-------------|
+| `XAI_API_KEY` | XAI / Grok API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key (optional) |
+| `OPENAI_API_KEY` | OpenAI API key (optional) |
+
 ## Testing
 
 Run the test suite:
@@ -310,7 +403,7 @@ black .
 Lint code:
 
 ```bash
-ruff check .
+flake8 orchestra/ tests/ --max-line-length=100
 ```
 
 Type checking:
