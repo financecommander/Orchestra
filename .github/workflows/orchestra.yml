@@ -1,0 +1,536 @@
+name: Orchestra Workflow
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: 'Name of Orchestra workflow to execute'
+        required: true
+        type: string
+      feature_request:
+        description: 'Feature description'
+        required: true
+        type: string
+      priority:
+        description: 'Priority level'
+        required: false
+        type: choice
+        default: 'P2'
+        options:
+          - P0
+          - P1
+          - P2
+          - P3
+      compliance_tags:
+        description: 'Comma-separated compliance tags (e.g., "BSA/AML,KYC,FINRA")'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  check-trigger:
+    name: Check Trigger Conditions
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      issue_number: ${{ steps.check.outputs.issue_number }}
+      workflow_name: ${{ steps.check.outputs.workflow_name }}
+      feature_request: ${{ steps.check.outputs.feature_request }}
+      priority: ${{ steps.check.outputs.priority }}
+      compliance_tags: ${{ steps.check.outputs.compliance_tags }}
+    steps:
+      - name: Check trigger conditions
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "issue_number=" >> $GITHUB_OUTPUT
+            echo "workflow_name=${{ inputs.workflow_name }}" >> $GITHUB_OUTPUT
+            echo "feature_request=${{ inputs.feature_request }}" >> $GITHUB_OUTPUT
+            echo "priority=${{ inputs.priority }}" >> $GITHUB_OUTPUT
+            echo "compliance_tags=${{ inputs.compliance_tags }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "issues" ]]; then
+            labels='${{ toJson(github.event.issue.labels.*.name) }}'
+            if echo "$labels" | grep -qE '"orchestra-workflow"|"feature-request"'; then
+              echo "should_run=true" >> $GITHUB_OUTPUT
+              echo "issue_number=${{ github.event.issue.number }}" >> $GITHUB_OUTPUT
+              echo "workflow_name=" >> $GITHUB_OUTPUT
+              echo "feature_request=" >> $GITHUB_OUTPUT
+              echo "priority=P2" >> $GITHUB_OUTPUT
+              echo "compliance_tags=" >> $GITHUB_OUTPUT
+            else
+              echo "should_run=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+          fi
+
+  execute-orchestra:
+    name: Execute Orchestra Workflow
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      workflow_id: ${{ steps.execute.outputs.workflow_id }}
+      status: ${{ steps.execute.outputs.status }}
+      branch_name: ${{ steps.create-pr.outputs.branch_name }}
+      pr_url: ${{ steps.create-pr.outputs.pr_url }}
+      escalation: ${{ steps.execute.outputs.escalation }}
+      escalation_reason: ${{ steps.execute.outputs.escalation_reason }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Orchestra and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f setup.py ] || [ -f pyproject.toml ]; then
+            pip install -e .
+          fi
+          pip install anthropic openai tenacity
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Set up API keys
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        run: |
+          echo "Configuring API keys..."
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY is not set"
+          fi
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::warning::OPENAI_API_KEY is not set"
+          fi
+          if [ -z "$XAI_API_KEY" ]; then
+            echo "::notice::XAI_API_KEY is not set, using stub"
+            echo "XAI_API_KEY=stub-not-configured" >> $GITHUB_ENV
+          fi
+
+      - name: Parse issue inputs
+        id: parse
+        if: needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10)
+            });
+
+            const body = issue.data.body || '';
+            const title = issue.data.title || '';
+            const labels = issue.data.labels.map(l => l.name);
+
+            // Parse workflow name from issue body (look for "Workflow: <name>")
+            const workflowMatch = body.match(/Workflow:\s*(.+)/i);
+            const workflow = workflowMatch ? workflowMatch[1].trim() : 'default';
+
+            // Parse priority from labels or body
+            const priorityLabel = labels.find(l => /^P[0-3]$/.test(l));
+            const priorityMatch = body.match(/Priority:\s*(P[0-3])/i);
+            const priority = priorityLabel || (priorityMatch ? priorityMatch[1] : 'P2');
+
+            // Parse compliance tags from body
+            const complianceMatch = body.match(/Compliance:\s*(.+)/i);
+            const compliance = complianceMatch ? complianceMatch[1].trim() : '';
+
+            core.setOutput('workflow_name', workflow);
+            core.setOutput('feature_request', title);
+            core.setOutput('priority', priority);
+            core.setOutput('compliance_tags', compliance);
+            core.setOutput('issue_body', body);
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          # Prefer workflow_dispatch inputs; fall back to issue-parsed values
+          WF_NAME="${{ needs.check-trigger.outputs.workflow_name || steps.parse.outputs.workflow_name || 'default' }}"
+          FEATURE="${{ needs.check-trigger.outputs.feature_request || steps.parse.outputs.feature_request || 'Unnamed feature' }}"
+          PRIORITY="${{ needs.check-trigger.outputs.priority || steps.parse.outputs.priority || 'P2' }}"
+          COMPLIANCE="${{ needs.check-trigger.outputs.compliance_tags || steps.parse.outputs.compliance_tags || '' }}"
+
+          echo "workflow_name=$WF_NAME" >> $GITHUB_OUTPUT
+          echo "feature_request=$FEATURE" >> $GITHUB_OUTPUT
+          echo "priority=$PRIORITY" >> $GITHUB_OUTPUT
+          echo "compliance_tags=$COMPLIANCE" >> $GITHUB_OUTPUT
+
+      - name: Execute Orchestra workflow
+        id: execute
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY || 'stub-not-configured' }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_NAME: ${{ steps.inputs.outputs.workflow_name }}
+          FEATURE_REQUEST: ${{ steps.inputs.outputs.feature_request }}
+          PRIORITY: ${{ steps.inputs.outputs.priority }}
+          COMPLIANCE_TAGS: ${{ steps.inputs.outputs.compliance_tags }}
+        run: |
+          WORKFLOW_ID="${WORKFLOW_NAME}-$(date +%s)"
+          export WORKFLOW_ID
+          echo "workflow_id=$WORKFLOW_ID" >> $GITHUB_OUTPUT
+
+          mkdir -p orchestra-output/artifacts
+          mkdir -p orchestra-output/state
+
+          WORKFLOW_FILE="workflows/${WORKFLOW_NAME}.py"
+          if [ -f "$WORKFLOW_FILE" ]; then
+            echo "Loading workflow from $WORKFLOW_FILE"
+            python "$WORKFLOW_FILE" \
+              --feature "$FEATURE_REQUEST" \
+              --priority "$PRIORITY" \
+              --compliance "$COMPLIANCE_TAGS" \
+              --output-dir orchestra-output/artifacts \
+              --state-file orchestra-output/state/snapshot.json \
+              2>&1 | tee orchestra-output/execution.log
+
+            EXIT_CODE=${PIPESTATUS[0]}
+          elif [ -d orchestra ] && python -c "import orchestra" 2>/dev/null; then
+            echo "Running Orchestra module"
+            python -m orchestra \
+              --workflow "$WORKFLOW_NAME" \
+              --feature "$FEATURE_REQUEST" \
+              --priority "$PRIORITY" \
+              --compliance "$COMPLIANCE_TAGS" \
+              --output-dir orchestra-output/artifacts \
+              --state-file orchestra-output/state/snapshot.json \
+              2>&1 | tee orchestra-output/execution.log
+
+            EXIT_CODE=${PIPESTATUS[0]}
+          else
+            echo "Orchestra workflow engine not yet available. Creating placeholder output."
+            EXIT_CODE=0
+            cat > orchestra-output/state/snapshot.json << 'SNAPSHOT_EOF'
+          {
+            "workflow_id": "PLACEHOLDER_ID",
+            "status": "placeholder",
+            "message": "Orchestra DSL execution engine is being set up"
+          }
+          SNAPSHOT_EOF
+            # Render dynamic values into the snapshot
+            python3 << 'PYEOF'
+          import json
+          import datetime
+          import os
+          data = {
+            'workflow_id': os.environ.get('WORKFLOW_ID', ''),
+            'workflow_name': os.environ.get('WORKFLOW_NAME', ''),
+            'feature_request': os.environ.get('FEATURE_REQUEST', ''),
+            'priority': os.environ.get('PRIORITY', ''),
+            'compliance_tags': os.environ.get('COMPLIANCE_TAGS', ''),
+            'status': 'placeholder',
+            'message': 'Orchestra DSL execution engine is being set up',
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+          }
+          with open('orchestra-output/state/snapshot.json', 'w') as f:
+            json.dump(data, f, indent=2)
+          PYEOF
+            cat > orchestra-output/artifacts/README.md << ARTIFACT_EOF
+          # Orchestra Output: $WORKFLOW_NAME
+
+          **Feature:** $FEATURE_REQUEST
+          **Priority:** $PRIORITY
+
+          > This is a placeholder. The Orchestra execution engine will generate
+          > actual artifacts once the DSL runtime is fully implemented.
+          ARTIFACT_EOF
+          fi
+
+          # Check for escalation triggers in output
+          ESCALATION="false"
+          ESCALATION_REASON=""
+          if [ -f orchestra-output/execution.log ]; then
+            if grep -qi "ESCALAT" orchestra-output/execution.log; then
+              ESCALATION="true"
+              ESCALATION_REASON=$(grep -i "ESCALAT" orchestra-output/execution.log | head -1)
+            fi
+          fi
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "status=failure" >> $GITHUB_OUTPUT
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+          echo "escalation=$ESCALATION" >> $GITHUB_OUTPUT
+          echo "escalation_reason=$ESCALATION_REASON" >> $GITHUB_OUTPUT
+
+      - name: Upload workflow state snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-state-snapshot
+          path: orchestra-output/state/
+
+      - name: Upload generated artifacts
+        if: steps.execute.outputs.status == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestra-generated-artifacts
+          path: orchestra-output/artifacts/
+
+      - name: Create feature branch and PR
+        id: create-pr
+        if: steps.execute.outputs.status == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_WORKFLOW_ID: ${{ steps.execute.outputs.workflow_id }}
+          INPUT_FEATURE: ${{ steps.inputs.outputs.feature_request }}
+          INPUT_PRIORITY: ${{ steps.inputs.outputs.priority }}
+          INPUT_ESCALATION: ${{ steps.execute.outputs.escalation }}
+          INPUT_ESCALATION_REASON: ${{ steps.execute.outputs.escalation_reason }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const workflowId = process.env.INPUT_WORKFLOW_ID;
+            const timestamp = Date.now();
+            const branchName = `feature/orchestra-${workflowId}-${timestamp}`;
+            const feature = process.env.INPUT_FEATURE;
+            const priority = process.env.INPUT_PRIORITY;
+            const escalation = process.env.INPUT_ESCALATION;
+            const escalationReason = process.env.INPUT_ESCALATION_REASON;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // Read state snapshot for summary
+            let summary = 'No execution summary available.';
+            try {
+              const state = JSON.parse(fs.readFileSync('orchestra-output/state/snapshot.json', 'utf8'));
+              summary = `**Workflow:** ${state.workflow_name || workflowId}\n`;
+              summary += `**Status:** ${state.status || 'completed'}\n`;
+              summary += `**Priority:** ${priority}\n`;
+              if (state.compliance_tags) summary += `**Compliance:** ${state.compliance_tags}\n`;
+              if (state.message) summary += `\n${state.message}\n`;
+            } catch (e) {
+              summary = 'Execution state could not be parsed.';
+            }
+
+            // List generated artifacts
+            const artifactsDir = 'orchestra-output/artifacts';
+            let artifactsList = '';
+            try {
+              const files = fs.readdirSync(artifactsDir);
+              artifactsList = files.map(f => `- \`${f}\``).join('\n');
+            } catch (e) {
+              artifactsList = '_No artifacts generated._';
+            }
+
+            // Build escalation section
+            let escalationSection = '';
+            if (escalation === 'true') {
+              escalationSection = `\n## ⚠️ Escalations\n\n${escalationReason}\n`;
+            }
+
+            // Create branch from default branch
+            const defaultBranch = (await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })).data.default_branch;
+
+            const ref = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${defaultBranch}`
+            });
+
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branchName}`,
+              sha: ref.data.object.sha
+            });
+
+            // Commit generated artifacts to the new branch
+            let files = [];
+            try {
+              files = fs.readdirSync(artifactsDir);
+            } catch (e) {
+              files = [];
+            }
+
+            for (const file of files) {
+              // Skip files with path traversal sequences
+              if (file.includes('..') || file.startsWith('/')) {
+                console.log(`Skipping unsafe filename: ${file}`);
+                continue;
+              }
+              const content = fs.readFileSync(`${artifactsDir}/${file}`);
+              const base64Content = content.toString('base64');
+              await github.rest.repos.createOrUpdateFileContents({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: `orchestra-output/${file}`,
+                message: `[Orchestra] Add generated artifact: ${file}`,
+                content: base64Content,
+                branch: branchName
+              });
+            }
+
+            // Create PR
+            const prBody = `## Orchestra Workflow Execution Summary
+
+            ${summary}
+
+            ## Artifacts Generated
+
+            ${artifactsList}
+
+            ## Quality Gate Results
+
+            - Security scan: _pending_
+            - Compliance score: _pending_
+
+            ## Workflow Run
+
+            [View workflow run](${runUrl})
+            ${escalationSection}
+            ---
+            _Generated by Orchestra DSL pipeline._`.replace(/^            /gm, '');
+
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Orchestra] ${feature}`,
+              head: branchName,
+              base: defaultBranch,
+              body: prBody
+            });
+
+            // Add labels
+            const labels = ['orchestra-generated', priority];
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.data.number,
+              labels: labels
+            });
+
+            // Request review from repo owner
+            try {
+              const repo = await github.rest.repos.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              const repoOwner = repo.data.owner.login;
+              if (repoOwner !== 'github-actions[bot]') {
+                await github.rest.pulls.requestReviewers({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.data.number,
+                  reviewers: [repoOwner]
+                });
+              }
+            } catch (e) {
+              console.log(`Could not request review: ${e.message}`);
+            }
+
+            core.setOutput('pr_url', pr.data.html_url);
+            core.setOutput('pr_number', pr.data.number);
+            core.setOutput('branch_name', branchName);
+
+      - name: Handle escalation
+        if: steps.execute.outputs.escalation == 'true' && needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+          ESCALATION_REASON: ${{ steps.execute.outputs.escalation_reason }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER, 10);
+            const reason = process.env.ESCALATION_REASON;
+
+            // Get repo owner for @mention
+            const repo = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            const owner = repo.data.owner.login;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body: `⚠️ Workflow escalated. Reason: ${reason}\n\n@${owner} — please review.`
+            });
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              labels: ['orchestra-escalated']
+            });
+
+  notify:
+    name: Notify Status
+    needs: [check-trigger, execute-orchestra]
+    if: always() && needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Notify success
+        if: needs.execute-orchestra.outputs.status == 'success' && needs.check-trigger.outputs.issue_number != ''
+        env:
+          PR_URL: ${{ needs.execute-orchestra.outputs.pr_url }}
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prUrl = process.env.PR_URL;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body: `✅ Workflow completed. PR created: ${prUrl}`
+            });
+
+      - name: Notify failure
+        if: needs.execute-orchestra.outputs.status == 'failure' && needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body: `❌ Workflow failed. See logs: ${runUrl}`
+            });
+
+      - name: Notify escalation
+        if: needs.execute-orchestra.outputs.escalation == 'true' && needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+          ESCALATION_REASON: ${{ needs.execute-orchestra.outputs.escalation_reason }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reason = process.env.ESCALATION_REASON;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body: `⚠️ Workflow escalated. Reason: ${reason}`
+            });
