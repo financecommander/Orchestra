@@ -1,0 +1,449 @@
+name: Codeforge-Hub Collaboration Workflow
+
+# Triggered on demand (workflow_dispatch) or when an issue labelled
+# "codeforge-hub" is opened/labelled.
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      feature_request:
+        description: 'Feature description for the collaboration workflow'
+        required: true
+        type: string
+      priority:
+        description: 'Priority level'
+        required: false
+        type: choice
+        default: 'P2'
+        options:
+          - P0
+          - P1
+          - P2
+          - P3
+      compliance_tags:
+        description: 'Comma-separated compliance tags (e.g., "SOC2,GDPR")'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  # ------------------------------------------------------------------
+  # Check whether the event should trigger the workflow
+  # ------------------------------------------------------------------
+  check-trigger:
+    name: Check Trigger Conditions
+    runs-on: ubuntu-latest
+    permissions:
+      issues: read
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      issue_number: ${{ steps.check.outputs.issue_number }}
+      feature_request: ${{ steps.check.outputs.feature_request }}
+      priority: ${{ steps.check.outputs.priority }}
+      compliance_tags: ${{ steps.check.outputs.compliance_tags }}
+
+    steps:
+      - name: Determine trigger
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_run=true"       >> "$GITHUB_OUTPUT"
+            echo "issue_number="         >> "$GITHUB_OUTPUT"
+            echo "feature_request=${{ inputs.feature_request }}" >> "$GITHUB_OUTPUT"
+            echo "priority=${{ inputs.priority }}"               >> "$GITHUB_OUTPUT"
+            echo "compliance_tags=${{ inputs.compliance_tags }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "issues" ]]; then
+            labels='${{ toJson(github.event.issue.labels.*.name) }}'
+            if echo "$labels" | grep -q '"codeforge-hub"'; then
+              echo "should_run=true"     >> "$GITHUB_OUTPUT"
+              echo "issue_number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+              echo "feature_request="   >> "$GITHUB_OUTPUT"
+              echo "priority=P2"        >> "$GITHUB_OUTPUT"
+              echo "compliance_tags="   >> "$GITHUB_OUTPUT"
+            else
+              echo "should_run=false"   >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "should_run=false"     >> "$GITHUB_OUTPUT"
+          fi
+
+  # ------------------------------------------------------------------
+  # Guardian validation + collaboration execution
+  # ------------------------------------------------------------------
+  execute-codeforge-hub:
+    name: Execute Codeforge-Hub Workflow
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    outputs:
+      workflow_id: ${{ steps.execute.outputs.workflow_id }}
+      status: ${{ steps.execute.outputs.status }}
+      branch_name: ${{ steps.create-pr.outputs.branch_name }}
+      pr_url: ${{ steps.create-pr.outputs.pr_url }}
+      escalation: ${{ steps.execute.outputs.escalation }}
+      escalation_reason: ${{ steps.execute.outputs.escalation_reason }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Orchestra and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f setup.py ] || [ -f pyproject.toml ]; then
+            pip install -e .
+          fi
+          pip install anthropic openai tenacity
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Parse issue inputs
+        id: parse
+        if: needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10)
+            });
+
+            const body  = issue.data.body  || '';
+            const title = issue.data.title || '';
+            const labels = issue.data.labels.map(l => l.name);
+
+            const priorityLabel = labels.find(l => /^P[0-3]$/.test(l));
+            const priorityMatch = body.match(/Priority:\s*(P[0-3])/i);
+            const priority = priorityLabel || (priorityMatch ? priorityMatch[1] : 'P2');
+
+            const complianceMatch = body.match(/Compliance:\s*(.+)/i);
+            const compliance = complianceMatch ? complianceMatch[1].trim() : '';
+
+            core.setOutput('feature_request',  title);
+            core.setOutput('priority',         priority);
+            core.setOutput('compliance_tags',  compliance);
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          FEATURE="${{ needs.check-trigger.outputs.feature_request || steps.parse.outputs.feature_request || 'Unnamed feature' }}"
+          PRIORITY="${{ needs.check-trigger.outputs.priority || steps.parse.outputs.priority || 'P2' }}"
+          COMPLIANCE="${{ needs.check-trigger.outputs.compliance_tags || steps.parse.outputs.compliance_tags || '' }}"
+
+          echo "feature_request=$FEATURE"   >> "$GITHUB_OUTPUT"
+          echo "priority=$PRIORITY"         >> "$GITHUB_OUTPUT"
+          echo "compliance_tags=$COMPLIANCE" >> "$GITHUB_OUTPUT"
+
+      - name: Execute codeforge-hub workflow
+        id: execute
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY || 'stub-not-configured' }}
+          TRITON_API_KEY: ${{ secrets.TRITON_API_KEY || 'stub-not-configured' }}
+          TRITON_BASE_URL: ${{ secrets.TRITON_BASE_URL || 'http://localhost:8000' }}
+          FEATURE_REQUEST: ${{ steps.inputs.outputs.feature_request }}
+          PRIORITY: ${{ steps.inputs.outputs.priority }}
+          COMPLIANCE_TAGS: ${{ steps.inputs.outputs.compliance_tags }}
+        run: |
+          WORKFLOW_ID="codeforge-hub-$(date +%s)"
+          export WORKFLOW_ID
+          echo "workflow_id=$WORKFLOW_ID" >> "$GITHUB_OUTPUT"
+
+          mkdir -p orchestra-output/artifacts orchestra-output/state
+
+          python workflows/codeforge_hub.py \
+            --feature  "$FEATURE_REQUEST" \
+            --priority "$PRIORITY" \
+            --compliance "$COMPLIANCE_TAGS" \
+            --output-dir orchestra-output/artifacts \
+            --state-file orchestra-output/state/snapshot.json \
+            2>&1 | tee orchestra-output/execution.log
+
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          ESCALATION="false"
+          ESCALATION_REASON=""
+          if grep -qi "ESCALATION" orchestra-output/execution.log; then
+            ESCALATION="true"
+            ESCALATION_REASON=$(grep -i "ESCALATION" orchestra-output/execution.log | head -1)
+          fi
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "status=failure"    >> "$GITHUB_OUTPUT"
+          else
+            echo "status=success"    >> "$GITHUB_OUTPUT"
+          fi
+          echo "escalation=$ESCALATION"         >> "$GITHUB_OUTPUT"
+          echo "escalation_reason=$ESCALATION_REASON" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow state snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeforge-hub-state-snapshot
+          path: orchestra-output/state/
+
+      - name: Upload generated artifacts
+        if: steps.execute.outputs.status == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeforge-hub-generated-artifacts
+          path: orchestra-output/artifacts/
+
+      - name: Create feature branch and PR
+        id: create-pr
+        if: steps.execute.outputs.status == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_WORKFLOW_ID: ${{ steps.execute.outputs.workflow_id }}
+          INPUT_FEATURE: ${{ steps.inputs.outputs.feature_request }}
+          INPUT_PRIORITY: ${{ steps.inputs.outputs.priority }}
+          INPUT_ESCALATION: ${{ steps.execute.outputs.escalation }}
+          INPUT_ESCALATION_REASON: ${{ steps.execute.outputs.escalation_reason }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const workflowId    = process.env.INPUT_WORKFLOW_ID;
+            const feature       = process.env.INPUT_FEATURE;
+            const priority      = process.env.INPUT_PRIORITY;
+            const escalation    = process.env.INPUT_ESCALATION;
+            const escalReason   = process.env.INPUT_ESCALATION_REASON;
+            const timestamp     = Date.now();
+            const branchName    = `feature/codeforge-hub-${workflowId}-${timestamp}`;
+            const runUrl        = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // Read state snapshot
+            let summary = 'No execution summary available.';
+            try {
+              const state = JSON.parse(
+                fs.readFileSync('orchestra-output/state/snapshot.json', 'utf8')
+              );
+              summary  = `**Workflow:** ${state.workflow_name || workflowId}\n`;
+              summary += `**Status:** ${state.status || 'completed'}\n`;
+              summary += `**Priority:** ${priority}\n`;
+              if (state.compliance_tags) summary += `**Compliance:** ${state.compliance_tags}\n`;
+            } catch (e) {
+              summary = 'Execution state could not be parsed.';
+            }
+
+            // List artifacts
+            const artifactsDir = 'orchestra-output/artifacts';
+            let artifactsList = '_No artifacts generated._';
+            try {
+              const files = fs.readdirSync(artifactsDir);
+              artifactsList = files.map(f => `- \`${f}\``).join('\n');
+            } catch (e) { /* no-op */ }
+
+            const escalationSection = escalation === 'true'
+              ? `\n## ⚠️ Escalations\n\n${escalReason}\n`
+              : '';
+
+            // Create branch
+            const defaultBranch = (await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            })).data.default_branch;
+
+            const ref = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `heads/${defaultBranch}`
+            });
+
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/heads/${branchName}`,
+              sha: ref.data.object.sha
+            });
+
+            // Commit artifacts
+            let files = [];
+            try { files = fs.readdirSync(artifactsDir); } catch (e) {}
+
+            const resolvedArtifactsDir = require('path').resolve(artifactsDir);
+            for (const file of files) {
+              const resolvedFilePath = require('path').resolve(artifactsDir, file);
+              if (!resolvedFilePath.startsWith(resolvedArtifactsDir + require('path').sep) &&
+                  resolvedFilePath !== resolvedArtifactsDir) {
+                console.log(`Skipping unsafe filename: ${file}`);
+                continue;
+              }
+              const content      = fs.readFileSync(resolvedFilePath);
+              const base64Content = content.toString('base64');
+              await github.rest.repos.createOrUpdateFileContents({
+                owner:   context.repo.owner,
+                repo:    context.repo.repo,
+                path:    `orchestra-output/${file}`,
+                message: `[Codeforge-Hub] Add generated artifact: ${file}`,
+                content: base64Content,
+                branch:  branchName
+              });
+            }
+
+            // Create PR
+            const prBody = `## Codeforge-Hub Workflow Execution Summary
+
+            ${summary}
+
+            ## Team Composition
+
+            | Role      | Caste     | Model                      |
+            |-----------|-----------|----------------------------|
+            | architect | ultralisk | triton-ternary-coder-8b    |
+            | coder     | hydralisk | gpt-4                      |
+            | reviewer  | guardian  | triton-ternary-coder-8b    |
+            | tester    | mutalisk  | claude-3-5-sonnet-20241022 |
+            | security  | guardian  | grok-beta                  |
+
+            ## Artifacts Generated
+
+            ${artifactsList}
+
+            ## Quality Gate Results
+
+            - Guardian security gate: _evaluated_
+            - Compliance gate: _evaluated_
+            - Pre-commit security scan: _evaluated_
+
+            ## Workflow Run
+
+            [View workflow run](${runUrl})
+            ${escalationSection}
+            ---
+            _Generated by Codeforge-Hub collaboration pipeline._`.replace(/^            /gm, '');
+
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `[Codeforge-Hub] ${feature}`,
+              head:  branchName,
+              base:  defaultBranch,
+              body:  prBody
+            });
+
+            // Label the PR
+            await github.rest.issues.addLabels({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: pr.data.number,
+              labels:       ['codeforge-hub-generated', priority]
+            });
+
+            // Request review from repo owner
+            try {
+              const repo      = await github.rest.repos.get({
+                owner: context.repo.owner,
+                repo:  context.repo.repo
+              });
+              const repoOwner = repo.data.owner.login;
+              if (repoOwner !== 'github-actions[bot]') {
+                await github.rest.pulls.requestReviewers({
+                  owner:       context.repo.owner,
+                  repo:        context.repo.repo,
+                  pull_number: pr.data.number,
+                  reviewers:   [repoOwner]
+                });
+              }
+            } catch (e) {
+              console.log(`Could not request review: ${e.message}`);
+            }
+
+            core.setOutput('pr_url',     pr.data.html_url);
+            core.setOutput('pr_number',  pr.data.number);
+            core.setOutput('branch_name', branchName);
+
+      - name: Handle escalation
+        if: >
+          steps.execute.outputs.escalation == 'true' &&
+          needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+          ESCALATION_REASON: ${{ steps.execute.outputs.escalation_reason }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = parseInt(process.env.ISSUE_NUMBER, 10);
+            const reason      = process.env.ESCALATION_REASON;
+
+            const repo  = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo:  context.repo.repo
+            });
+            const owner = repo.data.owner.login;
+
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: issueNumber,
+              body: `⚠️ Codeforge-Hub workflow escalated.\nReason: ${reason}\n\n@${owner} — please review.`
+            });
+
+            await github.rest.issues.addLabels({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: issueNumber,
+              labels:       ['codeforge-hub-escalated']
+            });
+
+  # ------------------------------------------------------------------
+  # Notify result on the originating issue
+  # ------------------------------------------------------------------
+  notify:
+    name: Notify Status
+    needs: [check-trigger, execute-codeforge-hub]
+    if: always() && needs.check-trigger.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+      - name: Notify success
+        if: >
+          needs.execute-codeforge-hub.outputs.status == 'success' &&
+          needs.check-trigger.outputs.issue_number != ''
+        env:
+          PR_URL: ${{ needs.execute-codeforge-hub.outputs.pr_url }}
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body: `✅ Codeforge-Hub workflow completed. PR created: ${process.env.PR_URL}`
+            });
+
+      - name: Notify failure
+        if: >
+          needs.execute-codeforge-hub.outputs.status == 'failure' &&
+          needs.check-trigger.outputs.issue_number != ''
+        env:
+          ISSUE_NUMBER: ${{ needs.check-trigger.outputs.issue_number }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              issue_number: parseInt(process.env.ISSUE_NUMBER, 10),
+              body: `❌ Codeforge-Hub workflow failed. See logs: ${runUrl}`
+            });
