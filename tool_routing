@@ -1,0 +1,21 @@
+blueprint: tool_routing
+description: "Standard pattern for calling internal tools vs external models"
+
+workflow:
+  on_task:
+    if task_type is internal_utility:
+      route_to: calculus_tools
+      method: direct_to_mainframe
+      inference: triton_ternary_via_bunny
+      protection: BUNNY_AI_GUARDIAN
+
+    if task_type requires_heavy_reasoning:
+      route_to: ai_portal
+      method: external_gateway_only
+      condition: triton_confidence_below_85
+      protection: BUNNY_AI_GUARDIAN
+      fallback: triton_ternary_retry
+
+  logging:
+    all_calls_recorded_in_bunny
+    per_ip_licensing_enforced
