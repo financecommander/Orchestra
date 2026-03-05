@@ -6,6 +6,7 @@ from unittest.mock import patch
 from orchestra.providers.agents.anthropic import AnthropicProvider
 from orchestra.providers.agents.openai import OpenAIProvider
 from orchestra.providers.agents.xai import XAIProvider
+from orchestra.providers.agents.triton import TritonProvider
 from orchestra.core.agent import Agent
 from orchestra.core.task import Task
 from orchestra.core.context import Context
@@ -250,3 +251,168 @@ class TestXAIProvider:
         provider = XAIProvider()
         assert "XAIProvider" in repr(provider)
         assert "grok-beta" in repr(provider)
+
+
+class TestTritonProvider:
+    """Test cases for TritonProvider."""
+
+    def test_triton_provider_creation(self):
+        """Test basic provider creation."""
+        provider = TritonProvider()
+        assert provider.model == "triton-ternary-coder-8b"
+        assert provider.temperature == 0.7
+        assert provider.max_tokens == 4096
+        assert provider.max_retries == 3
+
+    def test_triton_provider_with_config(self):
+        """Test provider creation with config."""
+        config = {
+            "model": "triton-ternary-coder-70b",
+            "temperature": 0.4,
+            "max_tokens": 2048,
+            "max_retries": 5,
+        }
+        provider = TritonProvider(config=config)
+        assert provider.model == "triton-ternary-coder-70b"
+        assert provider.temperature == 0.4
+        assert provider.max_tokens == 2048
+        assert provider.max_retries == 5
+
+    @patch.dict(os.environ, {"TRITON_API_KEY": "test-key-triton"})
+    def test_triton_provider_env_api_key(self):
+        """Test that API key is loaded from environment."""
+        provider = TritonProvider()
+        assert provider.api_key == "test-key-triton"
+
+    @patch.dict(os.environ, {"TRITON_BASE_URL": "http://triton.example.com:8000"})
+    def test_triton_provider_env_base_url(self):
+        """Test that base URL is loaded from environment."""
+        provider = TritonProvider()
+        assert provider.base_url == "http://triton.example.com:8000"
+
+    def test_triton_provider_execute(self):
+        """Test provider execute method."""
+        provider = TritonProvider()
+        agent = Agent(
+            name="test_agent",
+            provider="triton",
+            system_prompt="You are a guardian.",
+        )
+        task = Task(name="task1", description="Review this code")
+        context = Context()
+
+        result = provider.execute(agent, task, context)
+
+        assert result["status"] == "completed"
+        assert result["agent"] == "test_agent"
+        assert result["task"] == "task1"
+        assert result["provider"] == "triton"
+        assert "response" in result
+
+    def test_triton_provider_execute_with_context(self):
+        """Test execute with populated context."""
+        provider = TritonProvider()
+        agent = Agent(name="reviewer", provider="triton", system_prompt="Review code.")
+        task = Task(name="review", description="Review PR", inputs={"pr_id": "42"})
+        context = Context()
+        context.set("repo", "Orchestra")
+
+        result = provider.execute(agent, task, context)
+
+        assert result["status"] == "completed"
+        assert result["provider"] == "triton"
+
+    def test_triton_provider_build_messages_with_system_prompt(self):
+        """Test message building includes system prompt."""
+        provider = TritonProvider()
+        agent = Agent(
+            name="test", provider="triton", system_prompt="You are a guardian."
+        )
+        task = Task(name="task1", description="Test task", inputs={"key": "value"})
+        context = Context()
+        context.set("context_key", "context_value")
+
+        messages = provider._build_messages(agent, task, context)
+
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a guardian."
+        assert messages[1]["role"] == "user"
+        assert "Test task" in messages[1]["content"]
+        assert "key" in messages[1]["content"]
+        assert "context_key" in messages[1]["content"]
+
+    def test_triton_provider_build_messages_no_system_prompt(self):
+        """Test message building without system prompt."""
+        provider = TritonProvider()
+        agent = Agent(name="test", provider="triton")
+        task = Task(name="task1", description="Test task")
+        context = Context()
+
+        messages = provider._build_messages(agent, task, context)
+
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+
+    def test_triton_provider_retry_logic(self):
+        """Test retry logic with exponential backoff."""
+        provider = TritonProvider(config={"max_retries": 3, "retry_delay": 0.01})
+
+        call_count = 0
+
+        def mock_call_triton(messages):
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise Exception("Triton API error")
+            return "Success"
+
+        provider._call_triton = mock_call_triton
+
+        result = provider._call_triton_with_retry(
+            [{"role": "user", "content": "test"}]
+        )
+        assert result == "Success"
+        assert call_count == 3
+
+    def test_triton_provider_retry_exhausted(self):
+        """Test that retry raises error when exhausted."""
+        provider = TritonProvider(config={"max_retries": 2, "retry_delay": 0.01})
+
+        def mock_call_triton(messages):
+            raise Exception("Triton API error")
+
+        provider._call_triton = mock_call_triton
+
+        with pytest.raises(RuntimeError, match="Failed to call Triton API"):
+            provider._call_triton_with_retry([{"role": "user", "content": "test"}])
+
+    def test_triton_provider_validate_config(self):
+        """Test configuration validation."""
+        provider = TritonProvider()
+        assert provider.validate_config() is True
+
+        provider.temperature = 3.0
+        with pytest.raises(ValueError, match="Temperature must be between"):
+            provider.validate_config()
+
+        provider.temperature = 0.7
+        provider.max_tokens = 0
+        with pytest.raises(ValueError, match="max_tokens must be positive"):
+            provider.validate_config()
+
+        provider.max_tokens = 4096
+        provider.max_retries = 0
+        with pytest.raises(ValueError, match="max_retries must be at least 1"):
+            provider.validate_config()
+
+    def test_triton_provider_repr(self):
+        """Test string representation."""
+        provider = TritonProvider()
+        assert "TritonProvider" in repr(provider)
+        assert "triton-ternary-coder-8b" in repr(provider)
+
+    def test_triton_provider_exported_from_agents_package(self):
+        """Test that TritonProvider is exported from the agents package."""
+        from orchestra.providers.agents import TritonProvider as TP
+        assert TP is TritonProvider
