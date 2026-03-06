@@ -117,6 +117,85 @@ result = executor.execute(workflow, context)
 task1_result = context.get("task.task1.result")
 ```
 
+## What's New in v2.0
+
+Orchestra v2.0 adds three major capabilities for production-grade multi-agent orchestration:
+
+### Advanced Routing (6 strategies)
+```python
+from orchestra import AgentRouter, RoutingStrategy, CascadeRoute
+
+router = AgentRouter()
+agent = await router.route(
+    strategy=RoutingStrategy.CASCADE,
+    cascade=CascadeRoute(
+        try_agent="ultra_reasoning",
+        fallback="guardian_claude",
+        last_resort="hydra_financial"
+    )
+)
+```
+
+Strategies: `best_for`, `cascade`, `round_robin`, `load_balance`, `cheapest_above`, `dynamic_select`
+
+### Conditional Execution
+```python
+from orchestra import ConditionalExecutor, GuardClause
+
+executor = ConditionalExecutor(context={"amount": 500000})
+await executor.if_then_else(
+    condition=amount > 1000000,
+    then_block=premium_analysis,
+    else_block=standard_analysis
+)
+```
+
+Supports: if/then/else, guard clauses, pattern matching, parallel conditionals
+
+### Error Handling
+```python
+from orchestra import ErrorHandler, RetryConfig, CircuitBreaker, CircuitBreakerConfig
+
+# Retry with exponential backoff
+result = await ErrorHandler.retry(my_func, RetryConfig(max_attempts=3))
+
+# Circuit breaker protection
+breaker = CircuitBreaker(CircuitBreakerConfig(failure_threshold=5))
+result = await breaker.execute(risky_api_call)
+```
+
+Supports: retry strategies, circuit breaker, timeouts, graceful degradation, decorators
+
+### Orchestra DSL v2.0 Syntax
+```orchestra
+workflow credit_analysis {
+    guard { require: input.amount > 0 }
+
+    if input.amount > 1000000 {
+        try {
+            agent: guardian_claude
+            timeout: 30.0
+        } retry {
+            strategy: exponential_backoff
+            max_attempts: 3
+        } catch timeout_error {
+            agent: hydra_financial
+        }
+    } else {
+        agent: cascade [
+            try: drone_cheap,
+            fallback: hydra_financial
+        ]
+    }
+}
+```
+
+See [v2.0 Overview](docs/V2_OVERVIEW.md) and [Advanced Features Spec](docs/ADVANCED_FEATURES.md) for full details.
+
+See `examples/v2/` for 6 production workflow examples.
+
+---
+
 ## Architecture
 
 Orchestra consists of several key components:
@@ -125,6 +204,7 @@ Orchestra consists of several key components:
 - **Compilers**: Workflow compilation and validation
 - **Providers**: Extensible provider system for different execution backends
   - **Agent Providers**: Anthropic Claude, OpenAI, XAI Grok with retry logic
+- **Advanced** *(v2.0)*: Routing, conditionals, and error handling
 - **Quality Gates**: Security, compliance, and performance validation
 - **Agent Tasks**: Enhanced tasks with schema validation and parallel execution
 - **Executors**: Task and workflow execution engine
@@ -284,6 +364,16 @@ See `examples/fintech_workflow.py` for a complete multi-stage pipeline with:
 python examples/fintech_workflow.py
 ```
 
+### v2.0 Workflow Examples
+
+See `examples/v2/` for Orchestra DSL v2.0 workflow definitions:
+- `credit_analysis.orc` - Constitutional Tender (routing + conditionals + errors)
+- `tilt_enrichment.orc` - TILT (load balancing + dynamic routing)
+- `dfip_analytics.orc` - DFIP (pattern matching + error recovery)
+- `fraud_detection.orc` - Fraud detection (guards + validation + retries)
+- `adaptive_analysis.orc` - Dynamic agent selection
+- `batch_processing.orc` - Batch with resilience
+
 ## Testing
 
 Run the test suite:
@@ -318,6 +408,15 @@ Type checking:
 ```bash
 mypy orchestra/
 ```
+
+## Production Deployment
+
+For production deployment with the Swarm orchestration system, see [super-duper-spork](https://github.com/financecommander/super-duper-spork) - the proprietary AI swarm platform that uses Orchestra as its DSL engine.
+
+## Documentation
+
+- [v2.0 Overview](docs/V2_OVERVIEW.md) - What's new in v2.0
+- [Advanced Features Specification](docs/ADVANCED_FEATURES.md) - Full spec for routing, conditionals, error handling
 
 ## License
 
