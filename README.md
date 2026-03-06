@@ -420,351 +420,440 @@ For production deployment with the Swarm orchestration system, see [super-duper-
 
 ---
 
-## Shapeshifter Architecture Goals
+## Architecture Overview: Shapeshifter Orchestration Model
 
-### Adaptive AI Execution, Compression, and Validation System
+The system is designed as a **three-layer architecture** that separates orchestration logic, workflow definition, and computational execution.
 
-This section outlines the **future build-out plan** for the Shapeshifter architecture across the existing repository ecosystem.
+The architecture supports **adaptive multi-agent workflows**, **distributed execution**, and **compression-aware model routing**.
 
-Shapeshifter introduces:
-
-- adaptive model routing
-- compression-aware execution
-- layered validation
-- distributed worker execution
-- telemetry-driven optimization
-
-The goal is to evolve the current centralized swarm architecture into a **task-adaptive AI infrastructure platform**.
-
-#### System Overview
-
-Shapeshifter enables the system to dynamically adjust:
-
-- model size
-- compression level
-- workflow topology
-- compute location
-- validation intensity
-
-based on task classification and operational telemetry.
-
-Execution pipeline:
+The three architectural layers are:
 
 ```
-
-task input
-↓
-task classification
-↓
-compression profile selection
-↓
-workflow template selection
-↓
-execution
-↓
-validation
-↓
-escalation (if required)
-
+Adaptive Layer        → Shapeshifter
+Control Plane         → super-duper-spork + Orchestra + AI-PORTAL
+Execution Plane       → Triton + BUNNY + distributed workers
 ```
 
-#### Repository Architecture
+Each layer has distinct responsibilities.
 
-Shapeshifter builds on the current repository structure.
+---
 
-| Repository | Role |
-|---|---|
-| `super-duper-spork` | control plane orchestration |
-| `Orchestra` | workflow DSL |
-| `Triton` | model compilation and compression |
-| `AI-PORTAL` | evaluation and experiment management |
-| `ProbFlow` | probabilistic routing and uncertainty |
-| `BUNNY` | edge worker runtime |
+### 1. Architectural Layers
 
-#### Core Architectural Layers
+#### Adaptive Layer: Shapeshifter
 
-##### Control Plane
+The **Shapeshifter layer** determines how work should be executed.
 
-Repository: `super-duper-spork`
+It is not a single repository. It is a **system-wide orchestration model** implemented across multiple components.
 
-Responsibilities:
+Primary responsibilities:
 
-- task intake and routing
-- workflow orchestration
-- escalation control
-- validation ladder management
-- telemetry aggregation
+* task classification
+* workflow shape selection
+* compression profile selection
+* escalation policies
+* validation routing
+* adaptive swarm topology
 
-Future additions:
+Repositories involved:
+
+| Repository          | Role                                   |
+| ------------------- | -------------------------------------- |
+| `ProbFlow`          | uncertainty scoring and routing policy |
+| `super-duper-spork` | task lifecycle and routing execution   |
+| `Orchestra`         | workflow templates                     |
+| `AI-PORTAL`         | telemetry feedback                     |
+
+---
+
+#### Control Plane
+
+The control plane manages task orchestration and system coordination.
+
+Repositories:
+
+| Repository          | Responsibility                                   |
+| ------------------- | ------------------------------------------------ |
+| `super-duper-spork` | task lifecycle, scheduling, merge orchestration  |
+| `Orchestra`         | workflow DSL                                     |
+| `AI-PORTAL`         | session UI, telemetry dashboards, model registry |
+
+Control plane functions:
+
+* task intake
+* workflow compilation
+* scheduling and dispatch
+* validation orchestration
+* merge arbitration
+* telemetry collection
+
+---
+
+#### Execution Plane
+
+The execution plane performs the actual work.
+
+Repositories:
+
+| Repository | Responsibility                       |
+| ---------- | ------------------------------------ |
+| `Triton`   | model runtime and compression engine |
+| `BUNNY`    | distributed worker runtime           |
+
+Execution environments include:
 
 ```
-
-/routing
-/task_classifier
-/validation_ladder
-/compression_router
-/worker_registry
-
+Codespaces workers
+container workers
+edge workers
+local development workers
 ```
 
-##### Workflow Definition
+These workers execute tasks dispatched by the control plane.
+
+---
+
+### 2. Key Components
+
+#### Orchestra — Workflow DSL
 
 Repository: `Orchestra`
 
+Orchestra defines the **structure of work**.
+
 Responsibilities:
 
-- workflow templates
-- swarm execution topology
-- recursive task decomposition
-- validation pipeline definitions
+* task graphs
+* dependency relationships
+* parallel execution branches
+* conditional workflow paths
+* validation gates
+* workflow templates
 
-Future additions:
-
-```
-
-/workflow_templates
-/shapes
-fast_path
-reviewer_path
-swarm_path
-hierarchical_path
+Example workflow:
 
 ```
+planner
+ ↓
+parallel_workers
+ ↓
+reviewer
+ ↓
+merge
+```
 
-##### Model Runtime and Compression
+Orchestra determines **how tasks are structured**.
+
+---
+
+#### super-duper-spork — Control Plane Runtime
+
+Repository: `super-duper-spork`
+
+This is the **swarm control engine**.
+
+Responsibilities:
+
+* task lifecycle management
+* worker registry
+* queue management
+* task dispatch
+* merge arbitration
+* failure handling
+* retry policies
+* tracing and observability
+
+It executes the workflows defined by Orchestra.
+
+---
+
+#### Triton — Model Runtime and Compression Engine
 
 Repository: `Triton`
 
+Triton provides the **AI compute engine**.
+
 Responsibilities:
 
-- model compilation
-- compression pipelines
-- ternary runtime kernels
-- mixed precision export
-- hardware-target optimization
+* model compilation
+* inference runtime
+* compression pipelines
+* mixed precision execution
+* ternary kernels
+* hardware-specific optimization
+* model export
 
-Future additions:
+Example model profiles:
 
 ```
-
-/compression_profiles
 planner_safe
 specialist_balanced
 worker_fast
 edge_extreme
-
-/layer_sensitivity
-/runtime_metrics
-/export_targets
-
 ```
 
-##### Model Lifecycle and Evaluation
+Workers load Triton models to perform AI tasks.
 
-Repository: `AI-PORTAL`
+---
 
-Responsibilities:
-
-- model registry
-- experiment tracking
-- compression benchmarking
-- dataset management
-- telemetry dashboards
-
-Future additions:
-
-```
-
-/models
-/experiments
-/compression_benchmarks
-/task_family_metrics
-
-```
-
-##### Routing Intelligence
-
-Repository: `ProbFlow`
-
-Responsibilities:
-
-- uncertainty scoring
-- routing optimization
-- compression profile selection
-- escalation thresholds
-
-Future additions:
-
-```
-
-/routing_models
-/confidence_scoring
-/expected_value_estimation
-
-```
-
-##### Edge Worker Runtime
+#### BUNNY — Worker Runtime
 
 Repository: `BUNNY`
 
+BUNNY provides the **distributed worker execution environment**.
+
 Responsibilities:
 
-- lightweight worker runtime
-- constrained-device execution
-- secure remote worker protocol
-- compressed model execution
+* secure task execution
+* container / Codespaces worker runtime
+* edge inference deployment
+* execution isolation
+* worker telemetry
 
-Future additions:
+Workers running BUNNY execute tasks from the control plane.
+
+---
+
+#### AI-PORTAL — System Interface and Telemetry
+
+Repository: `AI-PORTAL`
+
+AI-PORTAL provides the user interface and experiment control.
+
+Responsibilities:
+
+* authenticated user sessions
+* Swarm mainframe UI
+* Blueprint Editor (visual Orchestra workflow builder)
+* model registry
+* experiment tracking
+* telemetry dashboards
+* performance analytics
+
+It visualizes system performance and feeds telemetry into the adaptive layer.
+
+---
+
+### 3. Execution Lifecycle
+
+The system executes tasks through the following pipeline:
 
 ```
-
-/worker_runtime
-/task_executor
-/telemetry_client
-
+Task Input
+ ↓
+Task Classification
+ ↓
+Workflow Selection
+ ↓
+Task Graph Compilation
+ ↓
+Worker Dispatch
+ ↓
+Model Execution
+ ↓
+Validation
+ ↓
+Result Synthesis
 ```
 
-#### Compression Strategy
+Step-by-step process:
 
-Compression must be treated as a **routing primitive** rather than a static model property.
+1. **Task Classification** — Shapeshifter determines task complexity, risk level, compression profile, and workflow shape.
 
-The system uses compression profiles.
+2. **Workflow Compilation** — Orchestra builds the task graph:
+   ```
+   planner
+    ↓
+   parallel_workers
+    ↓
+   review
+    ↓
+   merge
+   ```
 
-##### Profiles
+3. **Task Dispatch** — `super-duper-spork` schedules tasks to workers.
 
-###### Planner Safe
+4. **Execution** — Workers run Triton models (generate code, extract clauses, analyze financial data, etc.).
 
-Purpose:
+5. **Validation** — Validation gates: lint checks, test validation, static analysis, review models.
 
-- architecture planning
-- complex reasoning
-- arbitration
+6. **Synthesis** — Results are merged and returned.
 
-Compression:
+---
 
-- minimal quantization
-- mixed precision
+### 4. Telemetry Feedback Loop
 
-###### Specialist Balanced
+System telemetry drives adaptive optimization.
 
-Purpose:
+Metrics collected:
 
-- domain reasoning
-- medium complexity tasks
+* task latency
+* model runtime efficiency
+* memory usage
+* validation success rates
+* worker reliability
+* merge success rates
 
-Compression:
+Telemetry flow:
 
-- 4–5 bit quantization
-- mixed precision
+```
+Triton runtime metrics
+ ↓
+AI-PORTAL dashboards
+ ↓
+ProbFlow routing models
+ ↓
+Shapeshifter policy updates
+```
 
-###### Worker Fast
+Routing policies improve automatically over time.
 
-Purpose:
+---
 
-- bounded execution tasks
-- high-throughput workers
+### 5. System Design Principles
 
-Compression:
+#### Separation of Concerns
 
-- aggressive quantization
-- optional ternary
+* Orchestra defines workflows
+* super-duper-spork executes workflows
+* Triton performs model computation
+* BUNNY runs workers
+* AI-PORTAL manages sessions and telemetry
 
-###### Edge Extreme
+#### Adaptive Orchestration
 
-Purpose:
+Shapeshifter dynamically adjusts:
 
-- edge nodes
-- constrained environments
+* workflow structure
+* compression profiles
+* worker distribution
+* validation intensity
 
-Compression:
+#### Horizontal Scalability
 
-- ternary models
-- ultra-low memory footprint
+Workers scale independently.
 
-#### Ternary Compression Policy
+```
+Control Plane
+ ↓
+Task Queue
+ ↓
+Worker Fleet
+```
 
-Ternary compression is applied selectively.
+Adding workers increases system throughput without changing orchestration logic.
 
-Use cases:
+---
 
-- swarm workers
-- microtasks
-- edge nodes
+### 6. Repository Responsibility Matrix
 
-Avoid ternary for:
+| Layer     | Component        | Repository          | Role                            |
+| --------- | ---------------- | ------------------- | ------------------------------- |
+| Adaptive  | Routing & Policy | `ProbFlow`          | uncertainty scoring and routing |
+| Control   | Workflow DSL     | `Orchestra`         | task graph definition           |
+| Control   | Swarm Runtime    | `super-duper-spork` | scheduling and orchestration    |
+| Execution | Model Runtime    | `Triton`            | AI inference and compression    |
+| Execution | Worker Runtime   | `BUNNY`             | distributed execution           |
+| Interface | UI & Telemetry   | `AI-PORTAL`         | monitoring and user interaction |
 
-- planners
-- reviewer models
-- complex reasoning tasks
+---
 
-Layer sensitivity rules:
+### 7. Summary
 
-| Layer | Compression Policy |
-|---|---|
-| Embeddings | preserve |
-| Attention projections | moderate compression |
-| Feed-forward layers | aggressive compression |
-| Output head | preserve |
+The architecture is intentionally modular:
 
-#### Task Classification
+```
+Shapeshifter → decides how work should run
+Orchestra → defines workflow topology
+super-duper-spork → executes workflows
+Triton → runs AI models
+BUNNY → executes tasks
+AI-PORTAL → monitors system behavior
+```
+
+This separation allows the system to scale while remaining maintainable. Improvements to one layer do not require changes to the others.
+
+---
+
+## GCP Infrastructure
+
+The system runs on four GCP VMs in `us-east1-b`:
+
+| VM                | External IP      | Internal IP  | Role                                      |
+| ----------------- | ---------------- | ------------ | ----------------------------------------- |
+| `calculus-web`    | 34.148.8.51      | 10.142.0.3   | Public web frontend                       |
+| `fc-ai-portal`    | 34.139.78.75     | 10.142.0.2   | AI-PORTAL (frontend :3000, backend :8000) |
+| `swarm-gpu`       | 35.227.111.161   | 10.142.0.6   | Triton inference + LLaMA models           |
+| `swarm-mainframe` | 34.148.140.31    | 10.142.0.4   | Swarm control plane (super-duper-spork)   |
+
+Traffic flow:
+
+```
+User → calculus-web → fc-ai-portal (authenticated UI)
+                        ↓ /api/v2/*          → backend (FastAPI)
+                        ↓ /swarm/*           → swarm-mainframe
+                        ↓ /swarm/api/v1/blueprint/* → blueprint execution
+swarm-mainframe → swarm-gpu (Triton inference via internal network)
+```
+
+---
+
+## Compression Strategy
+
+Compression is treated as a **routing primitive** rather than a static model property.
+
+### Compression Profiles
+
+| Profile              | Use Case                        | Compression Level                  |
+| -------------------- | ------------------------------- | ---------------------------------- |
+| **Planner Safe**     | architecture, complex reasoning | minimal quantization, mixed precision |
+| **Specialist Balanced** | domain reasoning, mid-complexity | 4–5 bit quantization, mixed precision |
+| **Worker Fast**      | bounded tasks, high throughput  | aggressive quantization, optional ternary |
+| **Edge Extreme**     | edge nodes, constrained devices | ternary models, ultra-low memory   |
+
+### Ternary Compression Policy
+
+Use ternary for: swarm workers, microtasks, edge nodes.
+
+Avoid ternary for: planners, reviewer models, complex reasoning.
+
+| Layer                  | Compression Policy     |
+| ---------------------- | ---------------------- |
+| Embeddings             | preserve               |
+| Attention projections  | moderate compression   |
+| Feed-forward layers    | aggressive compression |
+| Output head            | preserve               |
+
+---
+
+## Task Classification
 
 Tasks are categorized before execution.
 
-| Class | Example Tasks |
-|---|---|
-| Compress | formatting, tests, lint fixes |
-| Balance | bug fixes, repo review |
-| Preserve | architecture changes |
+| Class    | Example Tasks                  | Workflow Shape         |
+| -------- | ------------------------------ | ---------------------- |
+| Compress | formatting, tests, lint fixes  | fast path              |
+| Balance  | bug fixes, repo review         | planner + workers      |
+| Preserve | architecture changes           | hierarchical swarm     |
 
-Classification inputs:
+Classification inputs: scope, risk, context size, expected reasoning depth.
 
-- scope
-- risk
-- context size
-- expected reasoning depth
+---
 
-#### Validation Architecture
+## Validation Architecture
 
 Validation uses a multi-stage ladder.
 
-##### Level 1 — Deterministic Checks
+| Level | Type                 | Examples                                      |
+| ----- | -------------------- | --------------------------------------------- |
+| 1     | Deterministic Checks | syntax, lint, type checking, schema validation |
+| 2     | Semantic Checks      | unit tests, static analysis, policy rules      |
+| 3     | Reviewer Models      | code reviewer, security reviewer, compliance   |
+| 4     | Human Review         | high-risk outputs, regulatory workflows        |
 
-Examples:
+### Worker Self-Validation
 
-- syntax validation
-- lint checks
-- type checking
-- schema validation
-
-##### Level 2 — Semantic Checks
-
-Examples:
-
-- unit tests
-- static analysis
-- policy rules
-
-##### Level 3 — Reviewer Models
-
-Examples:
-
-- code reviewer
-- security reviewer
-- compliance reviewer
-
-##### Level 4 — Human Review
-
-Required for:
-
-- high-risk outputs
-- unresolved conflicts
-- regulatory workflows
-
-#### Worker Self-Validation
-
-Workers return validation metadata.
-
-Example:
+Workers return validation metadata for early rejection of low-quality outputs:
 
 ```json
 {
@@ -777,178 +866,129 @@ Example:
 }
 ```
 
-This allows early rejection of low-quality outputs.
+### Failure Escalation
 
-#### Telemetry System
+Escalation ladder: `Compress → Balance → Preserve`
 
-Telemetry is required for adaptive routing.
+Triggers: validation failure, low confidence, repeated retries.
 
-Metrics tracked:
+---
 
-* success rate
-* validation pass rate
-* latency
-* compression profile performance
-* escalation frequency
+## Goals
 
-Repositories responsible:
+### Near-Term Goals (Q1–Q2 2026)
 
-```
-Triton → runtime metrics
-AI-PORTAL → dashboards
-super-duper-spork → routing telemetry
-```
+1. **Blueprint Editor GA** — Ship the visual Orchestra workflow builder inside AI-PORTAL as a production-grade tool for designing, validating, and executing `.orc` workflows through the Swarm Mainframe.
 
-#### Failure Escalation
+2. **Orchestra Language Server** — Deliver IDE-grade support for `.orc` files (diagnostics, completions, hover docs) via the LSP server already implemented in `orchestra/lsp/`.
 
-Escalation ladder:
+3. **Triton Model Registry Integration** — Complete the live model discovery pipeline: `swarm-gpu` Triton inventory → Orchestra registry → Blueprint Editor model selector → AI-PORTAL dashboards.
 
-```
-Compress → Balance → Preserve
-```
+4. **End-to-End Workflow Execution** — Close the loop from `.orc` authoring in the Blueprint Editor through `super-duper-spork` scheduling to Triton inference on `swarm-gpu`, with real-time status polling back to the UI.
 
-Triggers:
+5. **Validation Ladder v1** — Implement the four-level validation architecture (deterministic → semantic → reviewer → human) as a first-class Orchestra DSL construct with gate syntax.
 
-* validation failure
-* low confidence
-* repeated retries
+6. **Compression-Aware Routing** — Route tasks to the correct Triton compression profile based on Shapeshifter's task classification output, verified by ProbFlow confidence scoring.
 
-#### Execution Examples
+### Mid-Term Goals (Q3–Q4 2026)
 
-##### Small Task
+7. **ProbFlow Routing Engine** — Deploy uncertainty-based routing that selects workflow shape, compression profile, and escalation policy per-task using live telemetry regression.
 
-```
-classification → compress
-model → worker_fast
-validation → deterministic checks
-```
+8. **BUNNY Worker Fleet** — Expand execution to distributed workers (Codespaces, containers, edge devices) registered in the `super-duper-spork` worker registry and dispatched via task queue.
 
-##### Medium Task
+9. **Telemetry-Driven Optimization** — Feed runtime metrics (latency, cost, validation pass rate, compression efficiency) from Triton and `super-duper-spork` into ProbFlow to auto-tune routing weights.
 
-```
-classification → balance
-workflow → planner + workers
-validation → semantic checks + reviewer
-```
+10. **Multi-Swarm Topologies** — Support multiple concurrent swarm sessions with different collaboration modes (round table, review chain, specialist, debate) orchestrated by a single Shapeshifter policy.
 
-##### Large Task
+### Long-Term Goals (2027+)
 
-```
-classification → preserve
-workflow → hierarchical swarm
-validation → reviewer chain + human approval
-```
+11. **Self-Healing Workflows** — Workflows that detect failure patterns and restructure themselves (swap agents, adjust compression, re-route to fallback workers) without human intervention.
 
-#### Implementation Roadmap
+12. **Federated Execution** — Cross-cloud and cross-org task dispatch where BUNNY workers in different environments execute tasks under a unified control plane.
 
-##### Phase 1 — Validation Infrastructure
+13. **Adaptive AI Infrastructure Platform** — Fully autonomous system where routing decisions are telemetry-driven, models are dynamically selected, workflows adapt to task complexity, and validation is automated by default.
 
-Repositories:
+---
 
-```
-super-duper-spork
-Orchestra
-```
+## Roadmap
+
+### Phase 1 — Validation Infrastructure *(in progress)*
+
+Repositories: `super-duper-spork`, `Orchestra`
 
 Deliverables:
-
-* validation ladder
+* validation ladder (4-level gate system)
 * worker self-check protocol
 * task classification system
+* Orchestra gate DSL syntax (`guard`, `quality_gate`, `circuit_breaker`)
 
-##### Phase 2 — Compression Profiles
+### Phase 2 — Blueprint Editor & Tooling *(in progress)*
 
-Repositories:
-
-```
-Triton
-AI-PORTAL
-```
+Repositories: `Orchestra`, `AI-PORTAL`, `super-duper-spork`
 
 Deliverables:
+* Blueprint Editor UI in AI-PORTAL Swarm Mainframe page
+* Orchestra LSP server for `.orc` IDE support
+* Triton model registry with live discovery
+* Parse / generate / validate / execute pipeline
 
-* compression profiles
-* benchmark dashboards
+### Phase 3 — Compression Profiles
+
+Repositories: `Triton`, `AI-PORTAL`
+
+Deliverables:
+* four named compression profiles (planner_safe, specialist_balanced, worker_fast, edge_extreme)
+* benchmark dashboards in AI-PORTAL
 * mixed precision policies
+* layer sensitivity analysis
 
-##### Phase 3 — Adaptive Routing
+### Phase 4 — Adaptive Routing
 
-Repositories:
-
-```
-super-duper-spork
-ProbFlow
-```
+Repositories: `super-duper-spork`, `ProbFlow`
 
 Deliverables:
-
 * compression-aware routing
 * confidence scoring
 * escalation policies
+* dynamic agent selection
 
-##### Phase 4 — Distributed Worker Expansion
+### Phase 5 — Distributed Worker Expansion
 
-Repositories:
-
-```
-BUNNY
-super-duper-spork
-```
+Repositories: `BUNNY`, `super-duper-spork`
 
 Deliverables:
-
 * worker registry
-* remote task execution
-* edge worker support
+* remote task execution protocol
+* Codespaces / container / edge worker support
+* execution isolation and secure runtime
 
-##### Phase 5 — Telemetry Optimization
+### Phase 6 — Telemetry Optimization
 
-Repositories:
-
-```
-AI-PORTAL
-Triton
-ProbFlow
-```
+Repositories: `AI-PORTAL`, `Triton`, `ProbFlow`
 
 Deliverables:
+* runtime compression telemetry
+* routing optimization feedback loop
+* performance analytics dashboards
+* auto-tuning routing weights
 
-* compression telemetry
-* routing optimization
-* performance analytics
+### Phase 7 — Multi-Swarm & Self-Healing
 
-#### Engineering Principles
+Repositories: all
 
-Shapeshifter follows a single rule:
+Deliverables:
+* concurrent swarm topologies
+* self-restructuring workflows
+* federated execution across environments
+* autonomous infrastructure platform
+
+---
+
+## Engineering Principles
 
 > Use the smallest reliable model and workflow capable of completing the task safely.
 
 Compression, routing, and validation all support this objective.
-
-#### Expected Outcomes
-
-Compared to traditional single-model systems:
-
-* improved compute efficiency
-* reduced validation burden
-* higher scalability
-* adaptive model deployment
-* improved failure containment
-
-#### Long-Term Vision
-
-Shapeshifter evolves the existing architecture into:
-
-```
-Adaptive AI Infrastructure Platform
-```
-
-Where:
-
-* routing decisions are telemetry-driven
-* models are dynamically selected
-* workflows adapt to task complexity
-* validation is automated by default
 
 ---
 
