@@ -118,7 +118,11 @@ class TritonModelRegistry:
         registry_path: str | None = None,
         cache_ttl: int = 300,
     ) -> None:
-        self._registry_url = registry_url or os.environ.get("TRITON_REGISTRY_URL")
+        self._registry_url = registry_url or os.environ.get(
+            "TRITON_REGISTRY_URL",
+            # Default: swarm-gpu internal IP (us-east1-b), Triton HTTP port
+            "http://10.142.0.6:8000/v2/models",
+        )
         self._registry_path = registry_path or os.environ.get("TRITON_REGISTRY_PATH")
         self._cache_ttl = cache_ttl
         self._models: dict[str, TritonModel] = {}
