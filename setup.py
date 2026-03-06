@@ -26,6 +26,11 @@ setup(
         "Programming Language :: Python :: 3.11",
     ],
     python_requires=">=3.8",
+    entry_points={
+        "console_scripts": [
+            "orchestra=orchestra.parser.cli:main",
+        ],
+    },
     install_requires=[
         # Core dependencies - keeping minimal for now
     ],
