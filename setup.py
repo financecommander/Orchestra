@@ -29,6 +29,8 @@ setup(
     entry_points={
         "console_scripts": [
             "orchestra=orchestra.parser.cli:main",
+            "orchestra-lsp=orchestra.lsp.server:main",
+            "orchestra-editor=orchestra.blueprint_editor.editor:main",
         ],
     },
     install_requires=[
