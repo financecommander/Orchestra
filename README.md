@@ -460,7 +460,7 @@ Repositories involved:
 | Repository          | Role                                   |
 | ------------------- | -------------------------------------- |
 | `ProbFlow`          | uncertainty scoring and routing policy |
-| `super-duper-spork` | task lifecycle and routing execution   |
+| `super-duper-spork` | task lifecycle, routing execution, live GPU model routing (Phase 36) |
 | `Orchestra`         | workflow templates                     |
 | `AI-PORTAL`         | telemetry feedback                     |
 
@@ -474,7 +474,7 @@ Repositories:
 
 | Repository          | Responsibility                                   |
 | ------------------- | ------------------------------------------------ |
-| `super-duper-spork` | task lifecycle, scheduling, merge orchestration  |
+| `super-duper-spork` | task lifecycle, scheduling, merge orchestration, live GPU routing (Phase 36) |
 | `Orchestra`         | workflow DSL                                     |
 | `AI-PORTAL`         | session UI, telemetry dashboards, model registry |
 
@@ -560,6 +560,7 @@ Responsibilities:
 * task dispatch
 * merge arbitration
 * failure handling
+* live GPU model routing via TritonGPUClient (Phase 36)
 * retry policies
 * tracing and observability
 
@@ -751,7 +752,7 @@ Adding workers increases system throughput without changing orchestration logic.
 | --------- | ---------------- | ------------------- | ------------------------------- |
 | Adaptive  | Routing & Policy | `ProbFlow`          | uncertainty scoring and routing |
 | Control   | Workflow DSL     | `Orchestra`         | task graph definition           |
-| Control   | Swarm Runtime    | `super-duper-spork` | scheduling and orchestration    |
+| Control   | Swarm Runtime    | `super-duper-spork` | scheduling, orchestration, live model routing (Phase 36) |
 | Execution | Model Runtime    | `Triton`            | AI inference and compression    |
 | Execution | Worker Runtime   | `BUNNY`             | distributed execution           |
 | Interface | UI & Telemetry   | `AI-PORTAL`         | monitoring and user interaction |
@@ -765,7 +766,7 @@ The architecture is intentionally modular:
 ```
 Shapeshifter → decides how work should run
 Orchestra → defines workflow topology
-super-duper-spork → executes workflows
+super-duper-spork → executes workflows, live GPU model routing (Phase 36)
 Triton → runs AI models
 BUNNY → executes tasks
 AI-PORTAL → monitors system behavior
@@ -888,7 +889,7 @@ Triggers: validation failure, low confidence, repeated retries.
 
 5. **Validation Ladder v1** — Implement the four-level validation architecture (deterministic → semantic → reviewer → human) as a first-class Orchestra DSL construct with gate syntax.
 
-6. **Compression-Aware Routing** — Route tasks to the correct Triton compression profile based on Shapeshifter's task classification output, verified by ProbFlow confidence scoring.
+6. **Compression-Aware Routing** — Route tasks to the correct Triton compression profile based on Shapeshifter’s task classification output, verified by ProbFlow confidence scoring.
 
 ### Mid-Term Goals (Q3–Q4 2026)
 
