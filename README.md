@@ -1107,3 +1107,56 @@ MIT
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+---
+
+## BUNNY Execution Node Contract
+
+> Sourced from the approved **BUNNY Rust Agent Architecture & Sandbox Design** blueprint.
+
+`BUNNY` workers appear as **execution nodes** in Orchestra workflow graphs. When authoring task graphs, the following constraints and interfaces apply.
+
+### Task Sizing Constraint
+
+`BUNNY` runs tasks inside isolated sandboxes with strict resource limits:
+
+| Sandbox | Technology | Memory Limit | Timeout |
+|---|---|---|---|
+| Wasm | Wasmtime (`wasm32-wasi`) | 256 MB | 5 s |
+| MicroVM | Firecracker (KVM) | 4 GB | 60 s |
+
+**Orchestra must decompose subtasks small enough to fit within these windows.** Tasks that exceed limits are killed and return a `VerdictStatus::Timeout` or `VerdictStatus::MemoryViolation`.
+
+### Execution Node Capabilities
+
+When referencing a BUNNY worker in a workflow graph, available capability dimensions are:
+
+```
+hardware_targets: [x86_64-linux-musl, aarch64-linux-musl, wasm32-wasi]
+sandbox_tiers: [wasm, firecracker]
+triton_models: [<model names from AI-PORTAL registry>]
+```
+
+### Task Payload Types Orchestra May Dispatch
+
+- `WasmTask` — logic, parsing, data transformation (compiled to `wasm32-wasi`)
+- `TritonTask` — ternary model inference (`.triton` artifact + input tensor)
+- `ExecutionGraph` — multi-step chain scheduled within one worker session
+
+### `ExecutionVerdict` for Merge Arbitration
+
+Every BUNNY node returns:
+
+```rust
+pub struct ExecutionVerdict {
+    pub task_id: Uuid,
+    pub status: VerdictStatus,       // Success | Timeout | MemoryViolation | Fatal
+    pub stdout: String,
+    pub stderr: String,
+    pub hardware_cost: HardwareCost, // { cpu_ms, gpu_ms, memory_peak_mb }
+    pub confidence: f32,             // from Triton model inference
+    pub sandbox_tier: SandboxTier,   // Wasm | MicroVM
+    pub duration_ms: u64,
+}
+```
+
+Workflow graphs should treat `confidence < 0.7` as a signal to re-route the task to a higher-capacity worker or escalate to human review.
