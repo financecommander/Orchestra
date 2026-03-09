@@ -427,7 +427,7 @@ These workflows leverage 72 task routes across 18 agent castes, 4 pipeline gates
 | Repo | Role |
 |------|------|
 | **Orchestra** | DSL — workflow definitions, routing, conditionals, error handling |
-| **[super-duper-spork](https://github.com/financecommander/super-duper-spork)** | Execution — 17 agent castes, 72 task routes, OpenClaw tools, approval engine |
+| **[super-duper-spork](https://github.com/financecommander/super-duper-spork)** | Execution — 20 agent castes (incl. HYDRA_CRYPTO, HYDRA_DEFI), 81 skill categories, CCE crypto engine, OpenClaw tools |
 | **[Triton](https://github.com/financecommander/Triton)** | Inference — 9-model ternary ladder on NVIDIA L4 GPU |
 | **[calculus-tools](https://github.com/financecommander/calculus-tools)** | Services — 14 CrewAI tools, 18 service clients, API registry |
 | **[AI-PORTAL](https://github.com/financecommander/AI-PORTAL)** | Console — pipeline execution, model lifecycle, evaluations |
